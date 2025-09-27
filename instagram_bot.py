@@ -149,12 +149,11 @@ class CloudinaryUploader:
         
         try:
             response = requests.post(url, data=form_data, timeout=30)
-            response.raise_for_status()
-            
             data = response.json()
             
-            if 'secure_url' not in data:
-                error_msg = data.get('error', {}).get('message', 'Cloudinary upload failed. Check your Cloud Name and Upload Preset.')
+            if response.status_code != 200 or 'secure_url' not in data:
+                error_msg = data.get('error', {}).get('message', f'Cloudinary upload failed: {response.status_code}')
+                print(f"Cloudinary response: {data}")
                 raise Exception(error_msg)
             
             return data['secure_url']
