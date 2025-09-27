@@ -3,7 +3,7 @@ import time
 import base64
 import requests
 import os
-from typing import List, Dict, Optional
+from typing import List
 from dataclasses import dataclass
 import google.generativeai as genai
 
@@ -25,14 +25,10 @@ class GeneratedPost:
 
 class InstagramPostGenerator:
     def __init__(self, google_api_key: str):
-        """Initialize with Google API key for Gemini and Imagen"""
         genai.configure(api_key=google_api_key)
         self.google_api_key = google_api_key
     
     def fetch_inspiration_posts(self, location: str) -> List[InspirationPost]:
-        """
-        Fetch inspiration posts using Google Search via Gemini
-        """
         prompt = f"""
         Using Google Search, find 5 recent and visually interesting Instagram posts that are trending in {location}.
         For each post, provide a detailed, vivid description of the image content (imageDescription), the original username, and the original caption.
@@ -42,28 +38,22 @@ class InstagramPostGenerator:
         """
         
         try:
-            # Configure model with search tools
             model = genai.GenerativeModel('gemini-2.0-flash-exp')
-            
             response = model.generate_content(prompt)
             
-            # Extract JSON from response
             json_string = response.text.strip()
             
-            # Look for JSON block
             if '```json' in json_string:
                 start = json_string.find('```json') + 7
                 end = json_string.find('```', start)
                 json_string = json_string[start:end].strip()
             elif '[' in json_string and ']' in json_string:
-                # Extract array directly
                 start = json_string.find('[')
                 end = json_string.rfind(']') + 1
                 json_string = json_string[start:end]
             
             posts_data = json.loads(json_string)
             
-            # Convert to InspirationPost objects
             inspiration_posts = []
             for post_data in posts_data:
                 inspiration_posts.append(InspirationPost(
@@ -80,40 +70,24 @@ class InstagramPostGenerator:
             raise Exception("Failed to find inspiration. The AI may be busy or the API key may be invalid. Please try again.")
     
     def generate_ready_post(self, inspiration: InspirationPost) -> GeneratedPost:
-        """
-        Generate a new post with image and text content based on inspiration
-        """
         try:
-            # Step 1: Generate image using Imagen via REST API
             image_prompt = f'A high-quality, realistic photograph inspired by: "{inspiration.imageDescription}". Professional, clean, and suitable for Instagram.'
             
-            # Use REST API for image generation
-            headers = {
-                'Authorization': f'Bearer {self.google_api_key}',
-                'Content-Type': 'application/json'
-            }
+            hf_token = os.getenv('HUGGINGFACE_TOKEN')
+            if not hf_token:
+                raise Exception("HUGGINGFACE_TOKEN environment variable is required for image generation")
             
-            image_payload = {
-                'instances': [{
-                    'prompt': image_prompt
-                }],
-                'parameters': {
-                    'sampleCount': 1,
-                    'aspectRatio': '1:1',
-                    'safetyFilterLevel': 'block_some',
-                    'personGeneration': 'allow_adult'
-                }
-            }
+            hf_headers = {"Authorization": f"Bearer {hf_token}"}
+            hf_url = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell"
             
-            # Imagen not available in free tier - generate a simple colored square as placeholder
-            import io
-            from PIL import Image
-            img = Image.new('RGB', (400, 400), color=(70, 130, 180))  # Steel blue square
-            buffer = io.BytesIO()
-            img.save(buffer, format='PNG')
-            base64_image = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            print("🎨 Generating image with HuggingFace FLUX...")
+            response = requests.post(hf_url, headers=hf_headers, json={"inputs": image_prompt}, timeout=60)
+            if response.status_code == 200:
+                base64_image = base64.b64encode(response.content).decode('utf-8')
+                print("✅ Image generated successfully")
+            else:
+                raise Exception(f"HuggingFace image generation failed: {response.status_code} - {response.text}")
             
-            # Step 2: Generate caption and hashtags
             text_model = genai.GenerativeModel('gemini-2.0-flash-exp')
             
             text_prompt = f"""
@@ -137,7 +111,6 @@ class InstagramPostGenerator:
                 )
             )
             
-            # Parse JSON response
             json_string = text_response.text.strip()
             
             if '```json' in json_string:
@@ -160,19 +133,13 @@ class InstagramPostGenerator:
         except Exception as error:
             print(f"Error generating ready post: {error}")
             raise Exception("Failed to generate the post. The AI may be experiencing high traffic or the API key may be invalid. Please try again.")
-    
-
 
 
 class CloudinaryUploader:
     @staticmethod
     def upload_image(base64_image: str, cloud_name: str, upload_preset: str) -> str:
-        """
-        Upload base64 image to Cloudinary and return secure URL
-        """
         url = f"https://api.cloudinary.com/v1_1/{cloud_name}/image/upload"
         
-        # Prepare form data
         file_data = f"data:image/png;base64,{base64_image}"
         
         form_data = {
@@ -206,11 +173,7 @@ class InstagramPublisher:
         self.base_url = f'https://graph.facebook.com/{self.api_version}'
     
     def publish_post(self, account_id: str, access_token: str, image_url: str, caption: str) -> None:
-        """
-        Publish post to Instagram using Meta Graph API
-        """
         try:
-            # Step 1: Create media container
             create_url = f"{self.base_url}/{account_id}/media"
             create_params = {
                 'image_url': image_url,
@@ -230,9 +193,8 @@ class InstagramPublisher:
             creation_id = container_data['id']
             print(f"Media container created: {creation_id}")
             
-            # Step 1.5: Poll for container readiness
             max_retries = 10
-            retry_delay = 3  # 3 seconds
+            retry_delay = 3
             
             print("Waiting for media to process...")
             for i in range(max_retries):
@@ -260,7 +222,6 @@ class InstagramPublisher:
                 
                 time.sleep(retry_delay)
             
-            # Step 2: Publish the media container
             print("Publishing post...")
             publish_url = f"{self.base_url}/{account_id}/media_publish"
             publish_params = {
@@ -287,21 +248,16 @@ class InstagramPublisher:
 
 
 def main():
-    """
-    Main function to run the Instagram Post Generator
-    """
     print("🤖 Instagram Post Generator Starting...")
     
-    # Get environment variables
     google_api_key = os.getenv('GOOGLE_API_KEY')
     huggingface_token = os.getenv('HUGGINGFACE_TOKEN')
     cloudinary_cloud_name = os.getenv('CLOUDINARY_CLOUD_NAME')
     cloudinary_upload_preset = os.getenv('CLOUDINARY_UPLOAD_PRESET')
     instagram_account_id = os.getenv('INSTAGRAM_ACCOUNT_ID')
     instagram_access_token = os.getenv('INSTAGRAM_ACCESS_TOKEN')
-    location = os.getenv('LOCATION', 'New York')  # Default location
+    location = os.getenv('LOCATION', 'New York')
     
-    # Validate required environment variables
     required_vars = {
         'GOOGLE_API_KEY': google_api_key,
         'HUGGINGFACE_TOKEN': huggingface_token,
@@ -317,11 +273,9 @@ def main():
         return
     
     try:
-        # Step 1: Initialize generator
         print(f"📍 Searching for inspiration in {location}...")
         generator = InstagramPostGenerator(google_api_key)
         
-        # Step 2: Fetch inspiration posts
         inspiration_posts = generator.fetch_inspiration_posts(location)
         print(f"✅ Found {len(inspiration_posts)} inspiration posts")
         
@@ -329,7 +283,6 @@ def main():
             print("❌ No inspiration posts found")
             return
         
-        # Step 3: Generate new post from first inspiration
         print("🎨 Generating new post content...")
         generated_post = generator.generate_ready_post(inspiration_posts[0])
         print(f"✅ Generated caption: {generated_post.caption}")
@@ -338,7 +291,6 @@ def main():
         if not generated_post.base64Image:
             raise Exception("Failed to generate image content")
         
-        # Step 4: Upload image to Cloudinary
         print("☁️ Uploading image to Cloudinary...")
         uploader = CloudinaryUploader()
         image_url = uploader.upload_image(
@@ -348,11 +300,9 @@ def main():
         )
         print(f"✅ Image uploaded: {image_url}")
         
-        # Step 5: Publish to Instagram
         print("📱 Publishing to Instagram...")
         publisher = InstagramPublisher()
         
-        # Combine caption and hashtags
         full_caption = f"{generated_post.caption}\n\n{' '.join(generated_post.hashtags)}"
         
         publisher.publish_post(
@@ -366,7 +316,7 @@ def main():
         
     except Exception as e:
         print(f"❌ Error: {e}")
-        raise  # Re-raise for GitHub Actions to catch
+        raise
 
 
 if __name__ == "__main__":
