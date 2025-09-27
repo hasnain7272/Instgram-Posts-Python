@@ -45,10 +45,7 @@ class InstagramPostGenerator:
             # Configure model with search tools
             model = genai.GenerativeModel('gemini-2.0-flash-exp')
             
-            response = model.generate_content(
-                prompt,
-                tools=[{'google_search': {}}]  # Fixed: use google_search instead
-            )
+            response = model.generate_content(prompt)
             
             # Extract JSON from response
             json_string = response.text.strip()
