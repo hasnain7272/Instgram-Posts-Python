@@ -161,10 +161,7 @@ class InstagramPostGenerator:
             print(f"Error generating ready post: {error}")
             raise Exception("Failed to generate the post. The AI may be experiencing high traffic or the API key may be invalid. Please try again.")
     
-    def _create_placeholder_image(self) -> str:
-        """Create a simple placeholder image as base64"""
-        # This is a minimal 1x1 pixel transparent PNG - only for development
-        return "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+
 
 
 class CloudinaryUploader:
