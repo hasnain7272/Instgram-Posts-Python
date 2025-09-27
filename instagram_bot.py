@@ -47,7 +47,7 @@ class InstagramPostGenerator:
             
             response = model.generate_content(
                 prompt,
-                tools=[{'google_search_retrieval': {}}]  # Enable search
+                tools=[{'google_search': {}}]  # Fixed: use google_search instead
             )
             
             # Extract JSON from response
