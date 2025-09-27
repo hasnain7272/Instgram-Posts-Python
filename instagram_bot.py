@@ -134,7 +134,7 @@ class InstagramPostGenerator:
         genai.configure(api_key=google_api_key)
         self.google_api_key = google_api_key
         self.search_templates = [
-            "viral Instagram posts {niche} high engagement 2024",
+            "viral Instagram posts {niche} high engagement 2025 Current",
             "trending {niche} content Instagram getting most likes",
             "popular Instagram {niche} aesthetics viral posts",
             "{season} Instagram trends {niche} viral content",
