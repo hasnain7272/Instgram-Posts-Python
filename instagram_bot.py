@@ -74,7 +74,7 @@ class PostHistoryManager:
             files = {'file': ('post_history.json', json_string, 'application/json')}
             data = {
                 'upload_preset': self.upload_preset,
-                'public_id': 'post_history',
+                'public_id': 'post_history.json',
                 'resource_type': 'raw'
             }
             
