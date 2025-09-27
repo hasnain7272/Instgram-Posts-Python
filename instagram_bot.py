@@ -105,17 +105,13 @@ class InstagramPostGenerator:
                 }
             }
             
-            # Using Imagen 3.0 via Gemini API
-            imagen_model = genai.GenerativeModel('imagen-3.0-generate-001')
-            
-            image_response = imagen_model.generate_content([image_prompt])
-            
-            # Extract base64 image from response - this will need proper implementation
-            if hasattr(image_response, 'parts') and image_response.parts:
-                # Handle image response based on actual API structure
-                base64_image = str(image_response.parts[0])  # This needs proper implementation
-            else:
-                raise Exception("Failed to generate image - no image data in response")
+            # Imagen not available in free tier - generate a simple colored square as placeholder
+            import io
+            from PIL import Image
+            img = Image.new('RGB', (400, 400), color=(70, 130, 180))  # Steel blue square
+            buffer = io.BytesIO()
+            img.save(buffer, format='PNG')
+            base64_image = base64.b64encode(buffer.getvalue()).decode('utf-8')
             
             # Step 2: Generate caption and hashtags
             text_model = genai.GenerativeModel('gemini-2.0-flash-exp')
@@ -301,6 +297,7 @@ def main():
     
     # Get environment variables
     google_api_key = os.getenv('GOOGLE_API_KEY')
+    huggingface_token = os.getenv('HUGGINGFACE_TOKEN')
     cloudinary_cloud_name = os.getenv('CLOUDINARY_CLOUD_NAME')
     cloudinary_upload_preset = os.getenv('CLOUDINARY_UPLOAD_PRESET')
     instagram_account_id = os.getenv('INSTAGRAM_ACCOUNT_ID')
@@ -310,6 +307,7 @@ def main():
     # Validate required environment variables
     required_vars = {
         'GOOGLE_API_KEY': google_api_key,
+        'HUGGINGFACE_TOKEN': huggingface_token,
         'CLOUDINARY_CLOUD_NAME': cloudinary_cloud_name,
         'CLOUDINARY_UPLOAD_PRESET': cloudinary_upload_preset,
         'INSTAGRAM_ACCOUNT_ID': instagram_account_id,
