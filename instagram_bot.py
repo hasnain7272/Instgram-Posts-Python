@@ -80,15 +80,7 @@ class InstagramPostGenerator:
             
         except Exception as error:
             print(f"Error fetching inspiration posts: {error}")
-            # Return mock data if search fails
-            return [
-                InspirationPost(
-                    id="mock_1",
-                    username="travel_lover",
-                    caption="Beautiful sunset in the mountains! 🌅",
-                    imageDescription="A stunning sunset over mountain peaks with golden hour lighting, silhouetted trees in the foreground, and dramatic clouds in the sky"
-                )
-            ]
+            raise Exception("Failed to find inspiration. The AI may be busy or the API key may be invalid. Please try again.")
     
     def generate_ready_post(self, inspiration: InspirationPost) -> GeneratedPost:
         """
@@ -116,23 +108,17 @@ class InstagramPostGenerator:
                 }
             }
             
-            # Note: This endpoint may need adjustment based on actual API
-            image_url = f'https://us-central1-aiplatform.googleapis.com/v1/projects/YOUR_PROJECT_ID/locations/us-central1/publishers/google/models/imagegeneration@006:predict'
+            # Using Imagen 3.0 via Gemini API
+            imagen_model = genai.GenerativeModel('imagen-3.0-generate-001')
             
-            try:
-                image_response = requests.post(image_url, headers=headers, json=image_payload, timeout=60)
-                
-                if image_response.status_code == 200:
-                    image_data = image_response.json()
-                    # Extract base64 image from response
-                    base64_image = image_data.get('predictions', [{}])[0].get('bytesBase64Encoded', '')
-                else:
-                    # Fallback: create a placeholder base64 image
-                    base64_image = self._create_placeholder_image()
-                    
-            except Exception as img_error:
-                print(f"Image generation failed, using placeholder: {img_error}")
-                base64_image = self._create_placeholder_image()
+            image_response = imagen_model.generate_content([image_prompt])
+            
+            # Extract base64 image from response - this will need proper implementation
+            if hasattr(image_response, 'parts') and image_response.parts:
+                # Handle image response based on actual API structure
+                base64_image = str(image_response.parts[0])  # This needs proper implementation
+            else:
+                raise Exception("Failed to generate image - no image data in response")
             
             # Step 2: Generate caption and hashtags
             text_model = genai.GenerativeModel('gemini-2.0-flash-exp')
@@ -180,16 +166,11 @@ class InstagramPostGenerator:
             
         except Exception as error:
             print(f"Error generating ready post: {error}")
-            # Return a fallback post
-            return GeneratedPost(
-                base64Image=self._create_placeholder_image(),
-                caption=f"Inspired by {inspiration.username}!",
-                hashtags=['#instagram', '#content', '#ai', '#generated', '#social', '#media', '#bot']
-            )
+            raise Exception("Failed to generate the post. The AI may be experiencing high traffic or the API key may be invalid. Please try again.")
     
     def _create_placeholder_image(self) -> str:
         """Create a simple placeholder image as base64"""
-        # This is a minimal 1x1 pixel transparent PNG
+        # This is a minimal 1x1 pixel transparent PNG - only for development
         return "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
 
 
@@ -361,6 +342,9 @@ def main():
         generated_post = generator.generate_ready_post(inspiration_posts[0])
         print(f"✅ Generated caption: {generated_post.caption}")
         print(f"✅ Generated hashtags: {' '.join(generated_post.hashtags)}")
+        
+        if not generated_post.base64Image:
+            raise Exception("Failed to generate image content")
         
         # Step 4: Upload image to Cloudinary
         print("☁️ Uploading image to Cloudinary...")
