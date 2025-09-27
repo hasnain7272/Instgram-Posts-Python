@@ -140,15 +140,13 @@ class CloudinaryUploader:
     def upload_image(base64_image: str, cloud_name: str, upload_preset: str) -> str:
         url = f"https://api.cloudinary.com/v1_1/{cloud_name}/image/upload"
         
-        file_data = f"data:image/png;base64,{base64_image}"
+        file_data = f"data:image/jpeg;base64,{base64_image}"
         
-        form_data = {
-            'file': file_data,
-            'upload_preset': upload_preset
-        }
+        files = {'file': file_data}
+        data = {'upload_preset': upload_preset}
         
         try:
-            response = requests.post(url, data=form_data, timeout=30)
+            response = requests.post(url, files=files, data=data, timeout=30)
             data = response.json()
             
             if response.status_code != 200 or 'secure_url' not in data:
