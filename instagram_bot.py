@@ -470,7 +470,7 @@ def main():
         # Update history
         print("💾 Updating post history...")
         new_metadata = PostMetadata(
-            id=post_id,
+            id='1234',
             timestamp=datetime.now().isoformat(),
             inspiration_source=f"{next_niche} viral content",
             image_description_hash=hashlib.md5(inspiration_posts[0].imageDescription.lower().encode()).hexdigest(),
