@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instagram Bot Dashboard</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.10.0/font/bootstrap-icons.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+    <div class="container-fluid">
+        <!-- Header -->
+        <div class="row bg-primary text-white py-3 mb-4">
+            <div class="col">
+                <h1 class="display-6 mb-0">
+                    <i class="bi bi-robot"></i> Instagram Bot Dashboard
+                </h1>
+                <p class="mb-0">Automated content generation and posting</p>
+            </div>
+        </div>
+
+        <!-- Status Card -->
+        <div class="row mb-4">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="bi bi-activity"></i> Bot Status</h5>
+                        <span id="status-badge" class="badge bg-secondary">Checking...</span>
+                    </div>
+                    <div class="card-body">
+                        <div id="status-content">
+                            <div class="d-flex align-items-center">
+                                <div class="spinner-border spinner-border-sm me-2" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <span>Checking bot status...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-play-circle"></i> Manual Control</h5>
+                    </div>
+                    <div class="card-body">
+                        <button id="trigger-btn" class="btn btn-success w-100" onclick="triggerBot()">
+                            <i class="bi bi-rocket"></i> Trigger Bot Now
+                        </button>
+                        <small class="text-muted mt-2 d-block">Click to start content generation</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Configuration -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-gear"></i> Configuration</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label for="github-token" class="form-label">GitHub Token</label>
+                                <input type="password" class="form-control" id="github-token" placeholder="ghp_...">
+                                <small class="text-muted">Required for triggering workflows</small>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="repo-info" class="form-label">Repository</label>
+                                <input type="text" class="form-control" id="repo-info" placeholder="username/repo-name">
+                                <small class="text-muted">Format: username/repository-name</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Workflow Steps -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-list-check"></i> Workflow Progress</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-3">
+                                <div id="step-1" class="alert alert-secondary">
+                                    <i class="bi bi-search"></i> <strong>Step 1:</strong> Finding Inspiration
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div id="step-2" class="alert alert-secondary">
+                                    <i class="bi bi-image"></i> <strong>Step 2:</strong> Generating Content
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div id="step-3" class="alert alert-secondary">
+                                    <i class="bi bi-cloud-upload"></i> <strong>Step 3:</strong> Uploading Media
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div id="step-4" class="alert alert-secondary">
+                                    <i class="bi bi-share"></i> <strong>Step 4:</strong> Publishing Post
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="bi bi-clock-history"></i> Recent Activity</h5>
+                        <button class="btn btn-outline-primary btn-sm" onclick="refreshActivity()">
+                            <i class="bi bi-arrow-clockwise"></i> Refresh
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div id="activity-content">
+                            <div class="text-center text-muted">
+                                <i class="bi bi-inbox display-4"></i>
+                                <p class="mt-2">No recent activity</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        // Configuration
+        let config = {
+            githubToken: localStorage.getItem('github-token') || '',
+            repoInfo: localStorage.getItem('repo-info') || ''
+        };
+
+        // Load saved configuration
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('github-token').value = config.githubToken;
+            document.getElementById('repo-info').value = config.repoInfo;
+            
+            // Save config on change
+            document.getElementById('github-token').addEventListener('change', function() {
+                config.githubToken = this.value;
+                localStorage.setItem('github-token', this.value);
+            });
+            
+            document.getElementById('repo-info').addEventListener('change', function() {
+                config.repoInfo = this.value;
+                localStorage.setItem('repo-info', this.value);
+            });
+
+            // Initial status check
+            checkBotStatus();
+        });
+
+        // Trigger bot workflow
+        async function triggerBot() {
+            const button = document.getElementById('trigger-btn');
+            
+            // Validation
+            if (!config.githubToken || !config.repoInfo) {
+                showAlert('Please configure GitHub Token and Repository first!', 'warning');
+                return;
+            }
+
+            // Update button state
+            button.disabled = true;
+            button.innerHTML = '<i class="bi bi-hourglass-split"></i> Starting...';
+
+            try {
+                // Reset workflow steps
+                resetWorkflowSteps();
+                
+                // Call GitHub API to trigger workflow
+                const response = await fetch(`https://api.github.com/repos/${config.repoInfo}/actions/workflows/instagram-bot.yml/dispatches`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `token ${config.githubToken}`,
+                        'Accept': 'application/vnd.github.v3+json',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        ref: 'main'
+                    })
+                });
+
+                if (response.ok) {
+                    showAlert('Bot workflow triggered successfully!', 'success');
+                    updateStatus('Running', 'success');
+                    startProgressMonitoring();
+                } else {
+                    const error = await response.json();
+                    throw new Error(error.message || 'Failed to trigger workflow');
+                }
+
+            } catch (error) {
+                console.error('Error triggering bot:', error);
+                showAlert(`Error: ${error.message}`, 'danger');
+                updateStatus('Error', 'danger');
+            } finally {
+                // Reset button
+                setTimeout(() => {
+                    button.disabled = false;
+                    button.innerHTML = '<i class="bi bi-rocket"></i> Trigger Bot Now';
+                }, 3000);
+            }
+        }
+
+        // Check bot status
+        async function checkBotStatus() {
+            if (!config.githubToken || !config.repoInfo) {
+                updateStatus('Not Configured', 'secondary');
+                return;
+            }
+
+            try {
+                const response = await fetch(`https://api.github.com/repos/${config.repoInfo}/actions/runs?per_page=1`, {
+                    headers: {
+                        'Authorization': `token ${config.githubToken}`,
+                        'Accept': 'application/vnd.github.v3+json'
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.workflow_runs && data.workflow_runs.length > 0) {
+                        const lastRun = data.workflow_runs[0];
+                        const status = lastRun.status === 'completed' ? 
+                            (lastRun.conclusion === 'success' ? 'Success' : 'Failed') : 
+                            'Running';
+                        const badgeClass = status === 'Success' ? 'success' : 
+                                         status === 'Failed' ? 'danger' : 'warning';
+                        
+                        updateStatus(status, badgeClass);
+                        
+                        if (status === 'Running') {
+                            startProgressMonitoring();
+                        }
+                    } else {
+                        updateStatus('Ready', 'info');
+                    }
+                } else {
+                    updateStatus('Error', 'danger');
+                }
+            } catch (error) {
+                console.error('Error checking status:', error);
+                updateStatus('Offline', 'secondary');
+            }
+        }
+
+        // Update status display
+        function updateStatus(status, type) {
+            const badge = document.getElementById('status-badge');
+            const content = document.getElementById('status-content');
+            
+            badge.className = `badge bg-${type}`;
+            badge.textContent = status;
+            
+            const icons = {
+                'Running': 'bi-play-circle-fill',
+                'Success': 'bi-check-circle-fill',
+                'Failed': 'bi-x-circle-fill',
+                'Ready': 'bi-pause-circle-fill',
+                'Error': 'bi-exclamation-circle-fill',
+                'Offline': 'bi-wifi-off'
+            };
+            
+            content.innerHTML = `
+                <div class="d-flex align-items-center">
+                    <i class="bi ${icons[status] || 'bi-question-circle'} me-2"></i>
+                    <span>Bot is currently: <strong>${status}</strong></span>
+                </div>
+            `;
+        }
+
+        // Reset workflow steps
+        function resetWorkflowSteps() {
+            for (let i = 1; i <= 4; i++) {
+                const step = document.getElementById(`step-${i}`);
+                step.className = 'alert alert-secondary';
+            }
+        }
+
+        // Update workflow step
+        function updateWorkflowStep(step, type) {
+            const element = document.getElementById(`step-${step}`);
+            element.className = `alert alert-${type}`;
+        }
+
+        // Start progress monitoring
+        function startProgressMonitoring() {
+            let currentStep = 1;
+            const interval = setInterval(() => {
+                if (currentStep <= 4) {
+                    updateWorkflowStep(currentStep, 'info');
+                    currentStep++;
+                } else {
+                    clearInterval(interval);
+                    // Check final status
+                    setTimeout(() => {
+                        checkBotStatus();
+                        refreshActivity();
+                    }, 5000);
+                }
+            }, 15000); // Update every 15 seconds
+        }
+
+        // Show alert
+        function showAlert(message, type) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+            alertDiv.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            
+            document.querySelector('.container-fluid').insertBefore(alertDiv, document.querySelector('.container-fluid').firstChild);
+            
+            // Auto dismiss after 5 seconds
+            setTimeout(() => {
+                alertDiv.remove();
+            }, 5000);
+        }
+
+        // Refresh activity
+        function refreshActivity() {
+            const content = document.getElementById('activity-content');
+            content.innerHTML = `
+                <div class="d-flex align-items-center">
+                    <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                    <span>Loading recent activity...</span>
+                </div>
+            `;
+            
+            // Simulate loading
+            setTimeout(() => {
+                content.innerHTML = `
+                    <div class="text-center text-muted">
+                        <i class="bi bi-clock display-4"></i>
+                        <p class="mt-2">Activity log will appear here after bot runs</p>
+                    </div>
+                `;
+            }, 2000);
+        }
+
+        // Auto-refresh status every 30 seconds
+        setInterval(checkBotStatus, 30000);
+    </script>
+</body>
+</html>
