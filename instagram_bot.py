@@ -37,16 +37,44 @@ class PostMetadata:
 
 
 class PostHistoryManager:
-    def __init__(self, cloudinary_cloud_name: str, cloudinary_upload_preset: str):
+    def __init__(self, cloudinary_cloud_name: str, cloudinary_upload_preset: str, api_key: str, api_secret: str):
         self.cloud_name = cloudinary_cloud_name
         self.upload_preset = cloudinary_upload_preset
         self.history_file = "post_history.json"
+        self.api_key = api_key
+        self.api_secret = api_secret
+        
+    def generate_signature(self, params: dict) -> str:
+        import hashlib
+        
+        excluded_params = {'file', 'cloud_name', 'resource_type', 'api_key'}
+        filtered_params = {k: v for k, v in params.items() if k not in excluded_params}
+        sorted_params = sorted(filtered_params.items())
+        string_to_sign = '&'.join(f"{k}={v}" for k, v in sorted_params)
+        string_to_sign += self.api_secret
+        signature = hashlib.sha1(string_to_sign.encode('utf-8')).hexdigest()
+        
+        return signature
         
     def download_history(self) -> List[PostMetadata]:
-        """Download post history from Cloudinary"""
         try:
-            history_url = f"https://res.cloudinary.com/{self.cloud_name}/raw/upload/{self.history_file}"
-            response = requests.get(history_url, timeout=30)
+            timestamp = int(time.time())
+            params = {
+                'api_key': self.api_key,
+                'timestamp': timestamp,
+            }
+            signature = self.generate_signature(params)
+            
+            cache_buster = int(time.time())
+            signed_url = f"https://res.cloudinary.com/{self.cloud_name}/raw/upload/v{cache_buster}/{self.history_file}?api_key={self.api_key}&timestamp={timestamp}&signature={signature}"
+
+            headers = {
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0'
+            }
+            
+            response = requests.get(signed_url, headers=headers, timeout=30)
             
             if response.status_code == 200:
                 data = response.json()
@@ -61,25 +89,35 @@ class PostHistoryManager:
             return []
     
     def upload_history(self, history: List[PostMetadata]) -> None:
-        """Upload updated post history to Cloudinary"""
         try:
             history_data = {
                 'posts': [asdict(post) for post in history],
                 'updated_at': datetime.now().isoformat()
             }
-            
             json_string = json.dumps(history_data, indent=2)
-            
+
+            timestamp = int(time.time())
+            params = {
+                'api_key': self.api_key,
+                'public_id': self.history_file,
+                'timestamp': timestamp,
+                'upload_preset': self.upload_preset,
+            }
+
+            signature = self.generate_signature(params)
+
             url = f"https://api.cloudinary.com/v1_1/{self.cloud_name}/raw/upload"
             files = {'file': ('post_history.json', json_string, 'application/json')}
             data = {
+                'api_key': self.api_key,
+                'public_id': self.history_file,
+                'signature': signature,
+                'timestamp': timestamp,
                 'upload_preset': self.upload_preset,
-                'public_id': 'post_history.json',
-                'resource_type': 'raw'
             }
-            
+
             response = requests.post(url, files=files, data=data, timeout=30)
-            
+
             if response.status_code != 200:
                 print(f"Warning: Failed to upload history: {response.text}")
                 
@@ -88,40 +126,34 @@ class PostHistoryManager:
     
     def is_duplicate_content(self, new_description: str, new_keywords: List[str], 
                            new_hashtags: List[str], history: List[PostMetadata]) -> bool:
-        """Check if content is too similar to recent posts"""
         new_desc_hash = hashlib.md5(new_description.lower().encode()).hexdigest()
         recent_posts = [p for p in history if self._is_recent(p.timestamp, days=7)]
         
         for post in recent_posts:
-            # Check image description similarity
             if post.image_description_hash == new_desc_hash:
                 return True
             
-            # Check keyword overlap
             common_keywords = set(new_keywords) & set(post.caption_keywords)
             if len(common_keywords) / max(len(new_keywords), 1) > 0.6:
                 return True
             
-            # Check hashtag overlap
             common_hashtags = set(new_hashtags) & set(post.hashtags_used)
-            if len(common_hashtags) >= 5:  # Too many common hashtags
+            if len(common_hashtags) >= 5:
                 return True
                 
         return False
     
     def get_next_niche(self, history: List[PostMetadata]) -> str:
-        """Get next niche to avoid repetition"""
-        niches = ['fitness', 'food', 'travel', 'lifestyle', 'motivation', 'aesthetic', 'fashion', 'tech', 'hot Sensual indulgence']
-        recent_niches = [p.engagement_niche for p in history[-5:]]  # Last 5 posts
+        niches = ['fitness', 'motivation', 'food', 'travel', 'lifestyle', 'aesthetic', 'fashion', 'tech', 'hot Sensual indulgence']
+        recent_niches = [p.engagement_niche for p in history[-5:]]
         
         for niche in niches:
             if niche not in recent_niches:
                 return niche
         
-        return niches[0]  # Fallback
+        return niches[0]
     
     def _is_recent(self, timestamp_str: str, days: int) -> bool:
-        """Check if timestamp is within recent days"""
         try:
             post_time = datetime.fromisoformat(timestamp_str)
             return datetime.now() - post_time < timedelta(days=days)
@@ -142,7 +174,6 @@ class InstagramPostGenerator:
         ]
     
     def fetch_inspiration_posts(self, niche: str, season: str = None) -> List[InspirationPost]:
-        """Fetch inspiration posts with enhanced search strategy"""
         if not season:
             season = self._get_current_season()
             
@@ -198,7 +229,6 @@ class InstagramPostGenerator:
             raise Exception("Failed to find inspiration. Please check your API key and try again.")
     
     def generate_ready_post(self, inspiration: InspirationPost, niche: str) -> GeneratedPost:
-        """Generate post content with niche-specific optimization"""
         try:
             image_prompt = f'High-quality, professional {niche} Instagram photo inspired by: "{inspiration.imageDescription}". Aesthetic, engaging, and optimized for social media.'
             
@@ -270,7 +300,6 @@ class InstagramPostGenerator:
             raise Exception("Failed to generate post content. Please try again.")
     
     def _get_current_season(self) -> str:
-        """Get current season for seasonal content"""
         month = datetime.now().month
         if month in [12, 1, 2]:
             return "winter"
@@ -282,30 +311,49 @@ class InstagramPostGenerator:
             return "autumn"
     
     def _extract_keywords(self, caption: str) -> List[str]:
-        """Extract keywords from caption for duplicate checking"""
         words = caption.lower().replace('#', '').replace('@', '').split()
         keywords = [word for word in words if len(word) > 3 and word.isalpha()]
-        return keywords[:10]  # Top 10 keywords
+        return keywords[:10]
 
 
 class CloudinaryUploader:
     @staticmethod
-    def upload_image(base64_image: str, cloud_name: str, upload_preset: str) -> str:
-        """Upload image to Cloudinary"""
+    def upload_image(base64_image: str, cloud_name: str, upload_preset: str, api_key: str, api_secret: str) -> str:
+        import hashlib
+        
+        timestamp = int(time.time())
+        params = {
+            'api_key': api_key,
+            'timestamp': timestamp,
+            'upload_preset': upload_preset,
+        }
+        
+        excluded_params = {'file', 'cloud_name', 'resource_type', 'api_key'}
+        filtered_params = {k: v for k, v in params.items() if k not in excluded_params}
+        sorted_params = sorted(filtered_params.items())
+        string_to_sign = '&'.join(f"{k}={v}" for k, v in sorted_params)
+        string_to_sign += api_secret
+        signature = hashlib.sha1(string_to_sign.encode('utf-8')).hexdigest()
+        
         url = f"https://api.cloudinary.com/v1_1/{cloud_name}/image/upload"
         
         files = {'file': f"data:image/jpeg;base64,{base64_image}"}
-        data = {'upload_preset': upload_preset}
+        data = {
+            'api_key': api_key,
+            'signature': signature,
+            'timestamp': timestamp,
+            'upload_preset': upload_preset,
+        }
         
         try:
             response = requests.post(url, files=files, data=data, timeout=30)
-            data = response.json()
+            response_data = response.json()
             
-            if response.status_code != 200 or 'secure_url' not in data:
-                error_msg = data.get('error', {}).get('message', f'Upload failed: {response.status_code}')
+            if response.status_code != 200 or 'secure_url' not in response_data:
+                error_msg = response_data.get('error', {}).get('message', f'Upload failed: {response.status_code}')
                 raise Exception(error_msg)
             
-            return data['secure_url']
+            return response_data['secure_url']
             
         except Exception as error:
             print(f"Error uploading to Cloudinary: {error}")
@@ -318,7 +366,6 @@ class InstagramPublisher:
         self.base_url = f'https://graph.facebook.com/{self.api_version}'
     
     def publish_post(self, account_id: str, access_token: str, image_url: str, caption: str) -> str:
-        """Publish post to Instagram and return post ID"""
         try:
             create_url = f"{self.base_url}/{account_id}/media"
             create_params = {
@@ -338,7 +385,6 @@ class InstagramPublisher:
             creation_id = container_data['id']
             print(f"Media container created: {creation_id}")
             
-            # Wait for processing
             max_retries = 10
             for i in range(max_retries):
                 status_url = f"https://graph.facebook.com/{creation_id}"
@@ -360,7 +406,6 @@ class InstagramPublisher:
                 
                 time.sleep(3)
             
-            # Publish
             print("Publishing post...")
             publish_url = f"{self.base_url}/{account_id}/media_publish"
             publish_params = {'creation_id': creation_id, 'access_token': access_token}
@@ -384,11 +429,12 @@ class InstagramPublisher:
 def main():
     print("🤖 Enhanced Instagram Post Generator Starting...")
     
-    # Environment variables
     google_api_key = os.getenv('GOOGLE_API_KEY')
     huggingface_token = os.getenv('HUGGINGFACE_TOKEN')
     cloudinary_cloud_name = os.getenv('CLOUDINARY_CLOUD_NAME')
     cloudinary_upload_preset = os.getenv('CLOUDINARY_UPLOAD_PRESET')
+    cloudinary_api_key = os.getenv('CLOUDINARY_API_KEY')
+    cloudinary_api_secret = os.getenv('CLOUDINARY_API_SECRET')
     instagram_account_id = os.getenv('INSTAGRAM_ACCOUNT_ID')
     instagram_access_token = os.getenv('INSTAGRAM_ACCESS_TOKEN')
     
@@ -397,6 +443,8 @@ def main():
         'HUGGINGFACE_TOKEN': huggingface_token,
         'CLOUDINARY_CLOUD_NAME': cloudinary_cloud_name,
         'CLOUDINARY_UPLOAD_PRESET': cloudinary_upload_preset,
+        'CLOUDINARY_API_KEY': cloudinary_api_key,
+        'CLOUDINARY_API_SECRET': cloudinary_api_secret,
         'INSTAGRAM_ACCOUNT_ID': instagram_account_id,
         'INSTAGRAM_ACCESS_TOKEN': instagram_access_token
     }
@@ -407,20 +455,16 @@ def main():
         return
     
     try:
-        # Initialize managers
-        history_manager = PostHistoryManager(cloudinary_cloud_name, cloudinary_upload_preset)
+        history_manager = PostHistoryManager(cloudinary_cloud_name, cloudinary_upload_preset, cloudinary_api_key, cloudinary_api_secret)
         generator = InstagramPostGenerator(google_api_key)
         
-        # Get post history
         print("📥 Loading post history...")
         post_history = history_manager.download_history()
         print(f"Found {len(post_history)} previous posts")
         
-        # Determine next niche
         next_niche = history_manager.get_next_niche(post_history)
         print(f"🎯 Target niche: {next_niche}")
         
-        # Generate content with retry for duplicates
         max_attempts = 3
         for attempt in range(max_attempts):
             print(f"🔍 Fetching {next_niche} inspiration (attempt {attempt + 1})...")
@@ -434,7 +478,6 @@ def main():
             print("🎨 Generating post content...")
             generated_post = generator.generate_ready_post(inspiration_posts[0], next_niche)
             
-            # Check for duplicates
             keywords = generator._extract_keywords(generated_post.caption)
             hashtag_list = [tag.replace('#', '') for tag in generated_post.hashtags]
             
@@ -450,17 +493,17 @@ def main():
         print(f"📝 Caption: {generated_post.caption}")
         print(f"🏷️ Hashtags: {' '.join(generated_post.hashtags)}")
         
-        # Upload image
         print("☁️ Uploading to Cloudinary...")
         uploader = CloudinaryUploader()
         image_url = uploader.upload_image(
             base64_image=generated_post.base64Image,
             cloud_name=cloudinary_cloud_name,
-            upload_preset=cloudinary_upload_preset
+            upload_preset=cloudinary_upload_preset,
+            api_key=cloudinary_api_key,
+            api_secret=cloudinary_api_secret
         )
         print(f"✅ Image uploaded: {image_url}")
         
-        # Publish to Instagram
         print("📱 Publishing to Instagram...")
         publisher = InstagramPublisher()
         full_caption = f"{generated_post.caption}\n\n{' '.join(generated_post.hashtags)}"
@@ -472,7 +515,6 @@ def main():
             caption=full_caption
         )
         
-        # Update history
         print("💾 Updating post history...")
         new_metadata = PostMetadata(
             id=post_id,
