@@ -462,15 +462,10 @@ def main():
         
         # Publish to Instagram
         print("📱 Publishing to Instagram...")
-        publisher = InstagramPublisher()
-        full_caption = f"{generated_post.caption}\n\n{' '.join(generated_post.hashtags)}"
+        # publisher = InstagramPublisher()
+        # full_caption = f"{generated_post.caption}\n\n{' '.join(generated_post.hashtags)}"
         
-        post_id = publisher.publish_post(
-            account_id=instagram_account_id,
-            access_token=instagram_access_token,
-            image_url=image_url,
-            caption=full_caption
-        )
+        #post_id=publisher.publish_post(account_id=instagram_account_id,access_token=instagram_access_token,image_url=image_url,caption=full_caption)
         
         # Update history
         print("💾 Updating post history...")
