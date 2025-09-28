@@ -41,35 +41,34 @@ class PostHistoryManager:
         self.cloud_name = cloudinary_cloud_name
         self.upload_preset = cloudinary_upload_preset
         self.history_file = "post_history.json"
-        
+
     def download_history(self) -> List[PostMetadata]:
-        """Download post history from Cloudinary"""
+        """Download post history from Cloudinary, using cache busting."""
         try:
-            history_url = f"https://res.cloudinary.com/{self.cloud_name}/raw/upload/{self.history_file}"
+            import time
+            history_url = f"https://res.cloudinary.com/{self.cloud_name}/raw/upload/{self.history_file}?t={int(time.time())}"
+            print(f"[DEBUG] Downloading post history from {history_url}")
             response = requests.get(history_url, timeout=30)
-            
             if response.status_code == 200:
                 data = response.json()
                 posts = data.get('posts', [])
+                print(f"[DEBUG] Downloaded {len(posts)} posts from history.")
                 return [PostMetadata(**post) for post in posts]
             else:
-                print("No existing post history found, starting fresh")
+                print(f"[DEBUG] No existing post history found (status: {response.status_code}), starting fresh.")
                 return []
-                
         except Exception as e:
-            print(f"Error downloading history: {e}")
+            print(f"[ERROR] Error downloading history: {e}")
             return []
-    
+
     def upload_history(self, history: List[PostMetadata]) -> None:
-        """Upload updated post history to Cloudinary"""
+        """Upload updated post history to Cloudinary, force overwrite."""
         try:
             history_data = {
                 'posts': [asdict(post) for post in history],
                 'updated_at': datetime.now().isoformat()
             }
-            
             json_string = json.dumps(history_data, indent=2)
-            
             url = f"https://api.cloudinary.com/v1_1/{self.cloud_name}/raw/upload"
             files = {'file': ('post_history.json', json_string, 'application/json')}
             data = {
@@ -77,14 +76,15 @@ class PostHistoryManager:
                 'public_id': 'post_history.json',
                 'resource_type': 'raw'
             }
-            
+            print(f"[DEBUG] Uploading post history ({len(history)} posts) to Cloudinary...")
             response = requests.post(url, files=files, data=data, timeout=30)
-            
             if response.status_code != 200:
-                print(f"Warning: Failed to upload history: {response.text}")
-                
+                print(f"[ERROR] Failed to upload history: {response.text}")
+                raise Exception("Failed to upload history to Cloudinary")
+            print("[DEBUG] History uploaded successfully.")
         except Exception as e:
-            print(f"Error uploading history: {e}")
+            print(f"[ERROR] Error uploading history: {e}")
+            raise
     
     def is_duplicate_content(self, new_description: str, new_keywords: List[str], 
                            new_hashtags: List[str], history: List[PostMetadata]) -> bool:
