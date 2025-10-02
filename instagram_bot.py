@@ -1,3 +1,20 @@
+"""
+Instagram Reel Auto-Generator using Free Hugging Face APIs
+
+Required packages:
+pip install google-generativeai huggingface_hub requests pillow
+
+Required Environment Variables:
+- GOOGLE_API_KEY: Google Gemini API key
+- HUGGINGFACE_TOKEN: Hugging Face access token
+- CLOUDINARY_CLOUD_NAME: Cloudinary cloud name
+- CLOUDINARY_UPLOAD_PRESET: Cloudinary upload preset
+- CLOUDINARY_API_KEY: Cloudinary API key
+- CLOUDINARY_API_SECRET: Cloudinary API secret
+- INSTAGRAM_ACCOUNT_ID: Instagram Business Account ID
+- INSTAGRAM_ACCESS_TOKEN: Instagram Graph API access token
+"""
+
 import json
 import time
 import base64
@@ -8,7 +25,11 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from dataclasses import dataclass, asdict
 import google.generativeai as genai
+# Import necessary for video upload to Cloudinary
 from io import BytesIO 
+# Using a running Gradio Space ID for the Text-to-Video task 
+# NOTE: This ID points to a live user-deployed Space, which is often more stable.
+HF_VIDEO_MODEL_ID = "camenduru/Modelscope-text-to-video" 
 
 
 @dataclass
@@ -236,9 +257,10 @@ class InstagramPostGenerator:
         self.google_api_key = google_api_key
         self.hf_token = hf_token
         self.cloudinary_uploader = cloudinary_uploader
-        # Using Hugging Face Inference API for text-to-video
-        self.hf_video_model = "ali-vilab/text-to-video-ms-1.7b"
-        self.hf_api_url = f"https://api-inference.huggingface.co/models/{self.hf_video_model}"
+        # Initialize Hugging Face Inference Client
+        self.hf_client = InferenceClient(token=hf_token)
+        # Using a working text-to-image model (we'll create video from images)
+        self.image_model = "black-forest-labs/FLUX.1-schnell"
         self.search_templates = [
             "viral Instagram Reels {niche} high engagement 2025 Current",
             "trending {niche} short-form video content Instagram",
@@ -306,68 +328,33 @@ class InstagramPostGenerator:
     # NEW LOGIC: Text-to-Video via free Inference API + Cloudinary Upload
     def generate_ready_post(self, inspiration: InspirationPost, niche: str) -> GeneratedPost:
         try:
-            # Simplify prompt for better model compatibility
-            video_prompt = f"9:16 vertical video: {inspiration.imageDescription[:200]}, {niche} style, aesthetic, dynamic"
+            video_prompt = f"""
+            High-quality, professional **9:16 vertical video clip** for an Instagram Reel, 
+            inspired by: "{inspiration.imageDescription}". The video should be dynamic, 
+            aesthetic, and optimized for short-form social media. Max 5 seconds.
+            Focus on {niche} content.
+            """
 
             # --- VIDEO GENERATION LOGIC ---
-            hf_headers = {
-                "Authorization": f"Bearer {self.hf_token}",
-                "Content-Type": "application/json"
-            }
-            
-            hf_payload = {
-                "inputs": video_prompt,
-                "parameters": {
-                    "num_frames": 16,
-                    "num_inference_steps": 25
-                }
-            }
+            hf_headers = {"Authorization": f"Bearer {self.hf_token}"}
+            # Gradio API expects 'data' containing a list of inputs (just the prompt here)
+            hf_payload = json.dumps({"data": [video_prompt]})
 
             print(f"🎬 Generating {niche} vertical video via Hugging Face Inference API...")
-            print(f"📝 Using prompt: {video_prompt[:100]}...")
 
-            # Try with retry logic for model loading
-            max_retries = 3
-            video_bytes = None
-            
-            for retry in range(max_retries):
-                try:
-                    hf_response = requests.post(
-                        self.hf_api_url, 
-                        headers=hf_headers, 
-                        json=hf_payload, 
-                        timeout=300
-                    )
-                    
-                    if hf_response.status_code == 503:
-                        print(f"⏳ Model loading (attempt {retry + 1}/{max_retries})... waiting 20s")
-                        time.sleep(20)
-                        continue
-                    
-                    if hf_response.status_code == 200:
-                        video_bytes = hf_response.content
-                        break
-                    else:
-                        error_msg = hf_response.text
-                        print(f"⚠️ API Response: {error_msg[:200]}")
-                        
-                        if retry < max_retries - 1:
-                            print(f"Retrying... (attempt {retry + 2}/{max_retries})")
-                            time.sleep(10)
-                        else:
-                            raise Exception(f"Hugging Face API failed after {max_retries} attempts: {error_msg[:500]}")
-                            
-                except requests.exceptions.Timeout:
-                    if retry < max_retries - 1:
-                        print(f"⏱️ Timeout, retrying... (attempt {retry + 2}/{max_retries})")
-                        time.sleep(15)
-                    else:
-                        raise Exception("Video generation timed out after multiple attempts")
-            
-            if not video_bytes:
-                raise Exception("Failed to generate video after all retry attempts")
-                
-            print(f"✅ Raw video data retrieved. Size: {len(video_bytes) / (1024 * 1024):.2f} MB")
+            # Use a higher timeout for video generation cold start and processing
+            hf_response = requests.post(self.hf_video_url, headers=hf_headers, data=hf_payload, timeout=240) 
+
+            if hf_response.status_code != 200:
+                # Check for the common error of model loading timeout
+                if 'loading' in hf_response.text or hf_response.status_code == 503:
+                    raise Exception("Hugging Face model is loading or timed out. Try again in a minute.")
+                else:
+                    raise Exception(f"Hugging Face Video API failed: {hf_response.text}")
+
+            # The free API returns the raw binary video data
+            video_bytes = hf_response.content
+            print("✅ Raw video data retrieved. Size:", len(video_bytes) / (1024 * 1024), "MB")
 
             # Upload the video data to Cloudinary to get a public URL
             filename = f"{niche}_reel_{int(time.time())}"
