@@ -273,8 +273,14 @@ class InstagramPostGenerator:
         self.cloudinary_uploader = cloudinary_uploader
         # Initialize Hugging Face Inference Client
         self.hf_client = InferenceClient(token=hf_token)
-        # Using a working text-to-image model (we'll create video from images)
+        # Using working models
         self.image_model = "black-forest-labs/FLUX.1-schnell"
+        # Image-to-video models to try (in order of preference)
+        self.video_models = [
+            "stabilityai/stable-video-diffusion-img2vid-xt",
+            "ali-vilab/i2vgen-xl",
+            "strangeman3107/animov-512x"
+        ]
         self.search_templates = [
             "viral Instagram Reels {niche} high engagement 2025 Current",
             "trending {niche} short-form video content Instagram",
@@ -339,117 +345,122 @@ class InstagramPostGenerator:
             print(f"Error fetching inspiration posts: {error}")
             raise Exception("Failed to find inspiration. Please check your API key and try again.")
 
-    def _create_video_from_images(self, images: List[Image.Image], duration_per_frame: float = 0.5) -> bytes:
-        """Create a simple video from images using basic frame concatenation"""
+    def _try_direct_api_img2vid(self, image: Image.Image) -> Optional[bytes]:
+        """Fallback: Try direct API call to image-to-video endpoint"""
         try:
-            # Convert PIL images to bytes for video creation
-            frames = []
-            for img in images:
-                # Ensure all images are the same size (1080x1920 for 9:16)
-                img_resized = img.resize((1080, 1920), Image.LANCZOS)
-                # Convert to RGB if needed
-                if img_resized.mode != 'RGB':
-                    img_resized = img_resized.convert('RGB')
-                frames.append(img_resized)
+            print("🔄 Attempting direct API call for image-to-video...")
             
-            # Create a simple MP4 by encoding frames
-            # Since we can't use opencv/moviepy, we'll create a GIF-like video
-            output = io.BytesIO()
+            # Convert image to base64
+            buffered = BytesIO()
+            image.save(buffered, format="PNG")
+            img_base64 = base64.b64encode(buffered.getvalue()).decode()
             
-            # Save as animated format that Instagram accepts
-            # For simplicity, we'll duplicate frames to create ~3 second video
-            extended_frames = []
-            for frame in frames:
-                # Add each frame multiple times to slow it down
-                for _ in range(int(30 * duration_per_frame)):  # 30 fps
-                    extended_frames.append(frame)
+            # Try Stability AI's SVD model via direct API
+            url = "https://api-inference.huggingface.co/models/stabilityai/stable-video-diffusion-img2vid-xt"
+            headers = {"Authorization": f"Bearer {self.hf_token}"}
             
-            # Save first frame and append rest
-            if extended_frames:
-                extended_frames[0].save(
-                    output,
-                    format='GIF',
-                    save_all=True,
-                    append_images=extended_frames[1:],
-                    duration=33,  # ~30 fps
-                    loop=0
-                )
+            # Send image as base64
+            payload = {
+                "inputs": img_base64,
+                "parameters": {
+                    "num_frames": 14,
+                    "fps": 7
+                }
+            }
             
-            return output.getvalue()
+            response = requests.post(url, headers=headers, json=payload, timeout=300)
             
+            if response.status_code == 200:
+                print("✅ Direct API call succeeded!")
+                return response.content
+            else:
+                print(f"⚠️ Direct API returned status {response.status_code}: {response.text[:200]}")
+                return None
+                
         except Exception as e:
-            print(f"Error creating video from images: {e}")
-            # Fallback: return first image as static
-            output = io.BytesIO()
-            images[0].save(output, format='JPEG')
-            return output.getvalue()
+            print(f"⚠️ Direct API call failed: {str(e)[:100]}")
+            return None
 
-    # NEW LOGIC: Text-to-Image with InferenceClient + Create Video
+    def _image_to_video_hf(self, image: Image.Image) -> Optional[bytes]:
+        """Convert image to video using Hugging Face image-to-video models"""
+        for model_name in self.video_models:
+            try:
+                print(f"🎥 Trying image-to-video model: {model_name}")
+                
+                # Save image to bytes for upload
+                img_bytes = BytesIO()
+                image.save(img_bytes, format='PNG')
+                img_bytes.seek(0)
+                
+                # Try using the InferenceClient
+                video_bytes = self.hf_client.image_to_video(
+                    image=img_bytes.read(),
+                    model=model_name
+                )
+                
+                if video_bytes:
+                    print(f"✅ Video generated successfully with {model_name}")
+                    return video_bytes
+                    
+            except Exception as e:
+                print(f"⚠️ Model {model_name} failed: {str(e)[:100]}")
+                continue
+        
+        print("❌ All image-to-video models failed")
+        return None
+
+    # NEW LOGIC: Text-to-Image then Image-to-Video (Pure HuggingFace)
     def generate_ready_post(self, inspiration: InspirationPost, niche: str) -> GeneratedPost:
         try:
-            # Create multiple image prompts for variety
-            base_prompt = f"{inspiration.imageDescription[:150]}, {niche} aesthetic, professional quality, 9:16 vertical format, instagram reel style"
+            # Create optimized prompt for vertical content
+            base_prompt = f"{inspiration.imageDescription[:150]}, {niche} aesthetic, professional quality, 9:16 vertical format, instagram reel style, dynamic scene"
             
-            print(f"🎬 Generating {niche} images via Hugging Face InferenceClient...")
-            print(f"📝 Using model: {self.image_model}")
+            print(f"🎬 Generating {niche} content via Hugging Face...")
+            print(f"📝 Using text-to-image model: {self.image_model}")
             
-            images = []
-            num_frames = 4  # Generate 4 images for the video
+            # Generate single high-quality image
+            print(f"🖼️ Generating base image...")
             
-            for i in range(num_frames):
-                try:
-                    # Add variation to each frame
-                    if i == 0:
-                        prompt = f"{base_prompt}, opening shot"
-                    elif i == num_frames - 1:
-                        prompt = f"{base_prompt}, final shot"
-                    else:
-                        prompt = f"{base_prompt}, scene {i+1}"
-                    
-                    print(f"🖼️ Generating frame {i+1}/{num_frames}...")
-                    
-                    # Use InferenceClient for image generation
-                    image = self.hf_client.text_to_image(
-                        prompt=prompt,
-                        model=self.image_model,
-                        height=1920,
-                        width=1080
-                    )
-                    
-                    images.append(image)
-                    print(f"✅ Frame {i+1} generated successfully")
-                    
-                    # Small delay to avoid rate limiting
-                    if i < num_frames - 1:
-                        time.sleep(2)
-                    
-                except Exception as frame_error:
-                    print(f"⚠️ Error generating frame {i+1}: {frame_error}")
-                    # Try with simpler prompt
+            image = self.hf_client.text_to_image(
+                prompt=base_prompt,
+                model=self.image_model,
+                height=1920,
+                width=1080
+            )
+            
+            print(f"✅ Image generated successfully")
+            
+            # Convert image to video using HuggingFace
+            print("🎞️ Converting image to video via HuggingFace models...")
+            video_bytes = self._image_to_video_hf(image)
+            
+            if not video_bytes:
+                print("⚠️ Image-to-video failed, trying alternative approach...")
+                # Fallback: Try generating multiple images and making API call directly
+                print("🔄 Generating additional frames for manual video creation...")
+                
+                images = [image]
+                for i in range(2, 4):  # Generate 2 more frames
                     try:
-                        simple_prompt = f"{niche} content, vertical 9:16, professional"
-                        image = self.hf_client.text_to_image(
-                            prompt=simple_prompt,
+                        variant_prompt = f"{base_prompt}, variation {i}"
+                        variant_image = self.hf_client.text_to_image(
+                            prompt=variant_prompt,
                             model=self.image_model,
                             height=1920,
                             width=1080
                         )
-                        images.append(image)
-                        print(f"✅ Frame {i+1} generated with fallback prompt")
+                        images.append(variant_image)
+                        print(f"✅ Generated frame {i}")
+                        time.sleep(2)
                     except:
-                        if i == 0:  # If first frame fails, we can't continue
-                            raise
-                        # Skip this frame if it's not the first one
-                        continue
+                        break
+                
+                # Try one more time with direct API call for img2vid
+                video_bytes = self._try_direct_api_img2vid(images[0])
+                
+                if not video_bytes:
+                    raise Exception("Both InferenceClient and direct API approaches failed for video generation")
             
-            if not images:
-                raise Exception("No images were generated successfully")
-            
-            print(f"✅ Generated {len(images)} frames")
-            
-            # Create video from images
-            print("🎞️ Creating video from frames...")
-            video_bytes = self._create_video_from_images(images, duration_per_frame=0.75)
             print(f"✅ Video created. Size: {len(video_bytes) / (1024 * 1024):.2f} MB")
 
             # Upload the video data to Cloudinary to get a public URL
