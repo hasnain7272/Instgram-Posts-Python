@@ -10,8 +10,9 @@ from dataclasses import dataclass, asdict
 import google.generativeai as genai
 # Import necessary for video upload to Cloudinary
 from io import BytesIO 
-# Using a generalized model ID for the Text-to-Video task on the Inference API
-HF_VIDEO_MODEL_ID = "damo-vilab/modelscope-text-to-video"
+# Using a running Gradio Space ID for the Text-to-Video task 
+# NOTE: This ID points to a live user-deployed Space, which is often more stable.
+HF_VIDEO_MODEL_ID = "camenduru/Modelscope-text-to-video" 
 
 
 
@@ -240,7 +241,8 @@ class InstagramPostGenerator:
         self.google_api_key = google_api_key
         self.hf_token = hf_token
         self.cloudinary_uploader = cloudinary_uploader
-        self.hf_video_url = f"https://api-inference.huggingface.co/models/{HF_VIDEO_MODEL_ID}" # Hardcoded URL
+        # New URL structure for calling the Gradio-based Space API
+self.hf_video_url = f"https://huggingface.co/spaces/{HF_VIDEO_MODEL_ID}/api/predict"
         self.search_templates = [
             "viral Instagram Reels {niche} high engagement 2025 Current",
             "trending {niche} short-form video content Instagram",
@@ -317,7 +319,8 @@ class InstagramPostGenerator:
 
             # --- VIDEO GENERATION LOGIC ---
             hf_headers = {"Authorization": f"Bearer {self.hf_token}"}
-            hf_payload = json.dumps({"inputs": video_prompt, "options": {"wait_for_model": True}})
+            # Gradio API expects 'data' containing a list of inputs (just the prompt here)
+hf_payload = json.dumps({"data": [video_prompt]})
 
             print(f"🎬 Generating {niche} vertical video via Hugging Face Inference API...")
             
