@@ -10,8 +10,9 @@ from dataclasses import dataclass, asdict
 import google.generativeai as genai
 # Import necessary for video upload to Cloudinary
 from io import BytesIO 
-# Use a high-quality, known free Text-to-Video model ID for hardcoding the URL
-HF_VIDEO_MODEL_ID = "ali-vilab/text-to-video-ms-1.7b" 
+# Using a generalized model ID for the Text-to-Video task on the Inference API
+HF_VIDEO_MODEL_ID = "damo-vilab/modelscope-text-to-video"
+
 
 
 @dataclass
