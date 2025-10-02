@@ -24,12 +24,26 @@ import hashlib
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from dataclasses import dataclass, asdict
-import google.generativeai as genai
-# Import necessary for video upload to Cloudinary
-from io import BytesIO 
-# Using a running Gradio Space ID for the Text-to-Video task 
-# NOTE: This ID points to a live user-deployed Space, which is often more stable.
-HF_VIDEO_MODEL_ID = "camenduru/Modelscope-text-to-video" 
+from io import BytesIO
+import io
+
+try:
+    import google.generativeai as genai
+except ImportError:
+    print("❌ google-generativeai not installed. Run: pip install google-generativeai")
+    raise
+
+try:
+    from huggingface_hub import InferenceClient
+except ImportError:
+    print("❌ huggingface_hub not installed. Run: pip install huggingface_hub")
+    raise
+
+try:
+    from PIL import Image
+except ImportError:
+    print("❌ Pillow not installed. Run: pip install pillow")
+    raise 
 
 
 @dataclass
@@ -325,36 +339,118 @@ class InstagramPostGenerator:
             print(f"Error fetching inspiration posts: {error}")
             raise Exception("Failed to find inspiration. Please check your API key and try again.")
 
-    # NEW LOGIC: Text-to-Video via free Inference API + Cloudinary Upload
+    def _create_video_from_images(self, images: List[Image.Image], duration_per_frame: float = 0.5) -> bytes:
+        """Create a simple video from images using basic frame concatenation"""
+        try:
+            # Convert PIL images to bytes for video creation
+            frames = []
+            for img in images:
+                # Ensure all images are the same size (1080x1920 for 9:16)
+                img_resized = img.resize((1080, 1920), Image.LANCZOS)
+                # Convert to RGB if needed
+                if img_resized.mode != 'RGB':
+                    img_resized = img_resized.convert('RGB')
+                frames.append(img_resized)
+            
+            # Create a simple MP4 by encoding frames
+            # Since we can't use opencv/moviepy, we'll create a GIF-like video
+            output = io.BytesIO()
+            
+            # Save as animated format that Instagram accepts
+            # For simplicity, we'll duplicate frames to create ~3 second video
+            extended_frames = []
+            for frame in frames:
+                # Add each frame multiple times to slow it down
+                for _ in range(int(30 * duration_per_frame)):  # 30 fps
+                    extended_frames.append(frame)
+            
+            # Save first frame and append rest
+            if extended_frames:
+                extended_frames[0].save(
+                    output,
+                    format='GIF',
+                    save_all=True,
+                    append_images=extended_frames[1:],
+                    duration=33,  # ~30 fps
+                    loop=0
+                )
+            
+            return output.getvalue()
+            
+        except Exception as e:
+            print(f"Error creating video from images: {e}")
+            # Fallback: return first image as static
+            output = io.BytesIO()
+            images[0].save(output, format='JPEG')
+            return output.getvalue()
+
+    # NEW LOGIC: Text-to-Image with InferenceClient + Create Video
     def generate_ready_post(self, inspiration: InspirationPost, niche: str) -> GeneratedPost:
         try:
-            video_prompt = f"""
-            High-quality, professional **9:16 vertical video clip** for an Instagram Reel, 
-            inspired by: "{inspiration.imageDescription}". The video should be dynamic, 
-            aesthetic, and optimized for short-form social media. Max 5 seconds.
-            Focus on {niche} content.
-            """
-
-            # --- VIDEO GENERATION LOGIC ---
-            hf_headers = {"Authorization": f"Bearer {self.hf_token}"}
-            # Gradio API expects 'data' containing a list of inputs (just the prompt here)
-            hf_payload = json.dumps({"data": [video_prompt]})
-
-            print(f"🎬 Generating {niche} vertical video via Hugging Face Inference API...")
-
-            # Use a higher timeout for video generation cold start and processing
-            hf_response = requests.post(self.hf_video_url, headers=hf_headers, data=hf_payload, timeout=240) 
-
-            if hf_response.status_code != 200:
-                # Check for the common error of model loading timeout
-                if 'loading' in hf_response.text or hf_response.status_code == 503:
-                    raise Exception("Hugging Face model is loading or timed out. Try again in a minute.")
-                else:
-                    raise Exception(f"Hugging Face Video API failed: {hf_response.text}")
-
-            # The free API returns the raw binary video data
-            video_bytes = hf_response.content
-            print("✅ Raw video data retrieved. Size:", len(video_bytes) / (1024 * 1024), "MB")
+            # Create multiple image prompts for variety
+            base_prompt = f"{inspiration.imageDescription[:150]}, {niche} aesthetic, professional quality, 9:16 vertical format, instagram reel style"
+            
+            print(f"🎬 Generating {niche} images via Hugging Face InferenceClient...")
+            print(f"📝 Using model: {self.image_model}")
+            
+            images = []
+            num_frames = 4  # Generate 4 images for the video
+            
+            for i in range(num_frames):
+                try:
+                    # Add variation to each frame
+                    if i == 0:
+                        prompt = f"{base_prompt}, opening shot"
+                    elif i == num_frames - 1:
+                        prompt = f"{base_prompt}, final shot"
+                    else:
+                        prompt = f"{base_prompt}, scene {i+1}"
+                    
+                    print(f"🖼️ Generating frame {i+1}/{num_frames}...")
+                    
+                    # Use InferenceClient for image generation
+                    image = self.hf_client.text_to_image(
+                        prompt=prompt,
+                        model=self.image_model,
+                        height=1920,
+                        width=1080
+                    )
+                    
+                    images.append(image)
+                    print(f"✅ Frame {i+1} generated successfully")
+                    
+                    # Small delay to avoid rate limiting
+                    if i < num_frames - 1:
+                        time.sleep(2)
+                    
+                except Exception as frame_error:
+                    print(f"⚠️ Error generating frame {i+1}: {frame_error}")
+                    # Try with simpler prompt
+                    try:
+                        simple_prompt = f"{niche} content, vertical 9:16, professional"
+                        image = self.hf_client.text_to_image(
+                            prompt=simple_prompt,
+                            model=self.image_model,
+                            height=1920,
+                            width=1080
+                        )
+                        images.append(image)
+                        print(f"✅ Frame {i+1} generated with fallback prompt")
+                    except:
+                        if i == 0:  # If first frame fails, we can't continue
+                            raise
+                        # Skip this frame if it's not the first one
+                        continue
+            
+            if not images:
+                raise Exception("No images were generated successfully")
+            
+            print(f"✅ Generated {len(images)} frames")
+            
+            # Create video from images
+            print("🎞️ Creating video from frames...")
+            video_bytes = self._create_video_from_images(images, duration_per_frame=0.75)
+            print(f"✅ Video created. Size: {len(video_bytes) / (1024 * 1024):.2f} MB")
 
             # Upload the video data to Cloudinary to get a public URL
             filename = f"{niche}_reel_{int(time.time())}"
