@@ -15,7 +15,7 @@ jobs:
           python-version: '3.11'
       # ⚠️ CRITICAL UPDATE: Install ALL required libraries
       - name: Install dependencies
-        run: pip install google-generativeai requests numpy
+        run: pip install google-generativeai huggingface_hub requests pillow
       - name: Run Instagram Bot
         run: python instagram_bot.py
         env:
