@@ -15,7 +15,6 @@ from io import BytesIO
 HF_VIDEO_MODEL_ID = "camenduru/Modelscope-text-to-video" 
 
 
-
 @dataclass
 class InspirationPost:
     id: str
@@ -53,7 +52,7 @@ class CloudinaryVideoUploader:
     def generate_signature(self, params: dict) -> str:
         # Re-importing here for completeness, though it's already at the top
         import hashlib 
-        
+
         excluded_params = {'file', 'cloud_name', 'resource_type', 'api_key'}
         filtered_params = {k: v for k, v in params.items() if k not in excluded_params}
         sorted_params = sorted(filtered_params.items())
@@ -62,12 +61,12 @@ class CloudinaryVideoUploader:
         signature = hashlib.sha1(string_to_sign.encode('utf-8')).hexdigest()
 
         return signature
-    
+
     # NEW METHOD: Uploads binary video data
     def upload_video_from_bytes(self, video_bytes: bytes, filename: str) -> str:
         timestamp = int(time.time())
         public_id = f"reel_{filename}_{timestamp}"
-        
+
         params = {
             'api_key': self.api_key,
             'timestamp': timestamp,
@@ -75,9 +74,9 @@ class CloudinaryVideoUploader:
             'resource_type': 'video',
             'public_id': public_id
         }
-        
+
         signature = self.generate_signature(params)
-        
+
         data = {
             'api_key': self.api_key,
             'timestamp': timestamp,
@@ -85,10 +84,10 @@ class CloudinaryVideoUploader:
             'signature': signature,
             'public_id': public_id
         }
-        
+
         # Use BytesIO to simulate a file for the requests library
         files = {'file': (f'{filename}.mp4', BytesIO(video_bytes), 'video/mp4')}
-        
+
         print("☁️ Uploading video to Cloudinary...")
         response = requests.post(self.base_url, files=files, data=data, timeout=60)
 
@@ -96,7 +95,7 @@ class CloudinaryVideoUploader:
             raise Exception(f"Cloudinary upload failed: {response.text}")
 
         video_data = response.json()
-        
+
         # Return the secure HTTPS URL
         return video_data['secure_url'] 
 
@@ -242,7 +241,7 @@ class InstagramPostGenerator:
         self.hf_token = hf_token
         self.cloudinary_uploader = cloudinary_uploader
         # New URL structure for calling the Gradio-based Space API
-self.hf_video_url = f"https://huggingface.co/spaces/{HF_VIDEO_MODEL_ID}/api/predict"
+        self.hf_video_url = f"https://huggingface.co/spaces/{HF_VIDEO_MODEL_ID}/api/predict"
         self.search_templates = [
             "viral Instagram Reels {niche} high engagement 2025 Current",
             "trending {niche} short-form video content Instagram",
@@ -306,7 +305,7 @@ self.hf_video_url = f"https://huggingface.co/spaces/{HF_VIDEO_MODEL_ID}/api/pred
         except Exception as error:
             print(f"Error fetching inspiration posts: {error}")
             raise Exception("Failed to find inspiration. Please check your API key and try again.")
-    
+
     # NEW LOGIC: Text-to-Video via free Inference API + Cloudinary Upload
     def generate_ready_post(self, inspiration: InspirationPost, niche: str) -> GeneratedPost:
         try:
@@ -320,20 +319,20 @@ self.hf_video_url = f"https://huggingface.co/spaces/{HF_VIDEO_MODEL_ID}/api/pred
             # --- VIDEO GENERATION LOGIC ---
             hf_headers = {"Authorization": f"Bearer {self.hf_token}"}
             # Gradio API expects 'data' containing a list of inputs (just the prompt here)
-hf_payload = json.dumps({"data": [video_prompt]})
+            hf_payload = json.dumps({"data": [video_prompt]})
 
             print(f"🎬 Generating {niche} vertical video via Hugging Face Inference API...")
-            
+
             # Use a higher timeout for video generation cold start and processing
             hf_response = requests.post(self.hf_video_url, headers=hf_headers, data=hf_payload, timeout=240) 
 
             if hf_response.status_code != 200:
-                 # Check for the common error of model loading timeout
-                 if 'loading' in hf_response.text or hf_response.status_code == 503:
-                     raise Exception("Hugging Face model is loading or timed out. Try again in a minute.")
-                 else:
+                # Check for the common error of model loading timeout
+                if 'loading' in hf_response.text or hf_response.status_code == 503:
+                    raise Exception("Hugging Face model is loading or timed out. Try again in a minute.")
+                else:
                     raise Exception(f"Hugging Face Video API failed: {hf_response.text}")
-            
+
             # The free API returns the raw binary video data
             video_bytes = hf_response.content
             print("✅ Raw video data retrieved. Size:", len(video_bytes) / (1024 * 1024), "MB")
@@ -495,7 +494,7 @@ def main():
     cloudinary_api_secret = os.getenv('CLOUDINARY_API_SECRET')
     instagram_account_id = os.getenv('INSTAGRAM_ACCOUNT_ID')
     instagram_access_token = os.getenv('INSTAGRAM_ACCESS_TOKEN')
-    
+
     # HUGGINGFACE_VIDEO_URL is no longer required as it is hardcoded
 
     required_vars = {
@@ -520,11 +519,11 @@ def main():
         cloudinary_uploader = CloudinaryVideoUploader(
             cloudinary_cloud_name, cloudinary_upload_preset, cloudinary_api_key, cloudinary_api_secret
         )
-        
+
         history_manager = PostHistoryManager(
             cloudinary_cloud_name, cloudinary_upload_preset, cloudinary_api_key, cloudinary_api_secret
         )
-        
+
         generator = InstagramPostGenerator(
             google_api_key, huggingface_token, cloudinary_uploader
         )
@@ -538,7 +537,7 @@ def main():
 
         max_attempts = 3
         generated_post = None
-        
+
         for attempt in range(max_attempts):
             print(f"🔍 Fetching {next_niche} inspiration (attempt {attempt + 1})...")
             inspiration_posts = generator.fetch_inspiration_posts(next_niche)
@@ -564,7 +563,7 @@ def main():
                     raise Exception("Unable to generate original content after multiple attempts")
 
         if not generated_post:
-             raise Exception("Failed to generate a valid post object.")
+            raise Exception("Failed to generate a valid post object.")
 
         print(f"📝 Caption: {generated_post.caption}")
         print(f"🏷️ Hashtags: {' '.join(generated_post.hashtags)}")
@@ -581,7 +580,7 @@ def main():
             media_url=media_url,
             caption=full_caption
         )
-        
+
         print("💾 Updating post history...")
         new_metadata = PostMetadata(
             id=post_id,
