@@ -230,6 +230,7 @@ class InstagramPostGenerator:
     def __init__(self, google_api_key: str):
         genai.configure(api_key=google_api_key)
         self.google_api_key = google_api_key
+        self.image_generator = ImageGenerator()
         self.search_templates = [
             "viral Instagram posts {niche} high engagement 2025 Current",
             "trending {niche} content Instagram getting most likes",
