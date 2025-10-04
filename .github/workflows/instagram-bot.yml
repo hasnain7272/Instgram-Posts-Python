@@ -1,4 +1,4 @@
-name: Instagram Bot
+name: Video Bot
 on:
   schedule:
     - cron: '0 9 * * *'   # 9 AM UTC
@@ -7,26 +7,26 @@ on:
   workflow_dispatch:
 
 jobs:
-  post:
-    runs-on: ubuntu-latest
+  generate_video:
+    runs-on: [self-hosted, gpu]  # Ensure your runner is labeled as `gpu`
+
     steps:
-      - uses: actions/checkout@v4
-      
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-      
-      - name: Install dependencies
-        run: pip install huggingface_hub google-generativeai requests
-      
-      - name: Run Instagram Bot
-        run: python instagram_bot.py
-        env:
-          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-          HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
-          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
-          CLOUDINARY_UPLOAD_PRESET: ${{ secrets.CLOUDINARY_UPLOAD_PRESET }}
-          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
-          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
-          INSTAGRAM_ACCOUNT_ID: ${{ secrets.INSTAGRAM_ACCOUNT_ID }}
-          INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+    - name: Checkout Repository
+      uses: actions/checkout@v2
+
+    - name: Set up Python environment
+      run: |
+        python -m venv venv
+        source venv/bin/activate
+        pip install --upgrade pip
+        pip install torch torchvision torchaudio diffusers transformers ffmpeg
+
+    - name: Generate video
+      run: |
+        python generate_video.py  # This file contains the video generation logic
+
+    - name: Upload generated video
+      uses: actions/upload-artifact@v2
+      with:
+        name: generated-video
+        path: /content/drive/MyDrive/generated_video.mp4  # Path where video is saved
