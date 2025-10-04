@@ -300,7 +300,7 @@ def main():
         
         print(f"✅ Video URL: {video_url}")
         
-        Publish to Instagram
+        # Publish to Instagram
         publisher = InstagramReelPublisher()
         full_caption = f"{reel_data['caption']}\n\n{' '.join(reel_data['hashtags'])}"
         
