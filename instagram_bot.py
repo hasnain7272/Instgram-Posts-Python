@@ -1,12 +1,11 @@
 """
-Instagram Reel Auto-Generator using Replicate API for Text-to-Video
+Instagram Reel Auto-Generator using Google Veo 3 for Text-to-Video
 
 Required packages:
-pip install google-generativeai replicate requests pillow
+pip install google-genai requests
 
 Required Environment Variables:
-- GOOGLE_API_KEY: Google Gemini API key
-- REPLICATE_API_TOKEN: Replicate API token (get free credits at replicate.com)
+- GOOGLE_API_KEY: Google Gemini API key (with Veo 3 access)
 - CLOUDINARY_CLOUD_NAME: Cloudinary cloud name
 - CLOUDINARY_UPLOAD_PRESET: Cloudinary upload preset
 - CLOUDINARY_API_KEY: Cloudinary API key
@@ -20,21 +19,17 @@ import time
 import requests
 import os
 import hashlib
+import tempfile
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from dataclasses import dataclass, asdict
 from io import BytesIO
 
 try:
-    import google.generativeai as genai
+    from google import genai
+    from google.genai import types
 except ImportError:
-    print("❌ google-generativeai not installed. Run: pip install google-generativeai")
-    raise
-
-try:
-    import replicate
-except ImportError:
-    print("❌ replicate not installed. Run: pip install replicate")
+    print("❌ google-genai not installed. Run: pip install google-genai")
     raise
 
 
@@ -80,6 +75,40 @@ class CloudinaryVideoUploader:
         string_to_sign += self.api_secret
         signature = hashlib.sha1(string_to_sign.encode('utf-8')).hexdigest()
         return signature
+
+    def upload_video_from_file(self, video_file_path: str, filename: str) -> str:
+        """Upload video from local file to Cloudinary"""
+        timestamp = int(time.time())
+        public_id = f"reel_{filename}_{timestamp}"
+
+        params = {
+            'api_key': self.api_key,
+            'timestamp': timestamp,
+            'upload_preset': self.upload_preset,
+            'resource_type': 'video',
+            'public_id': public_id
+        }
+
+        signature = self.generate_signature(params)
+
+        data = {
+            'api_key': self.api_key,
+            'timestamp': timestamp,
+            'upload_preset': self.upload_preset,
+            'signature': signature,
+            'public_id': public_id
+        }
+
+        print("☁️ Uploading video to Cloudinary...")
+        with open(video_file_path, 'rb') as video_file:
+            files = {'file': video_file}
+            response = requests.post(self.base_url, files=files, data=data, timeout=120)
+
+        if response.status_code != 200:
+            raise Exception(f"Cloudinary upload failed: {response.text}")
+
+        video_data = response.json()
+        return video_data['secure_url']
 
     def upload_video_from_url(self, video_url: str, filename: str) -> str:
         """Upload video from URL to Cloudinary"""
@@ -240,21 +269,11 @@ class PostHistoryManager:
 
 
 class InstagramPostGenerator:
-    def __init__(self, google_api_key: str, replicate_api_token: str, cloudinary_uploader: CloudinaryVideoUploader):
-        genai.configure(api_key=google_api_key)
+    def __init__(self, google_api_key: str, cloudinary_uploader: CloudinaryVideoUploader):
         self.google_api_key = google_api_key
-        self.replicate_api_token = replicate_api_token
         self.cloudinary_uploader = cloudinary_uploader
-        
-        # Set Replicate API token
-        os.environ["REPLICATE_API_TOKEN"] = replicate_api_token
-        
-        # Video generation models (in order of preference)
-        self.video_models = [
-            "lucataco/hailuo-minimax-video",  # Fast and reliable
-            "minimax/video-01",  # Good quality
-            "bytedance/i2vgen-xl"  # Backup option
-        ]
+        # Initialize Veo 3 client
+        self.veo_client = genai.Client(api_key=google_api_key)
         
         self.search_templates = [
             "viral Instagram Reels {niche} high engagement 2025 Current",
@@ -288,10 +307,14 @@ class InstagramPostGenerator:
         """
 
         try:
-            model = genai.GenerativeModel('gemini-2.0-flash-exp')
-            response = model.generate_content(prompt)
+            # Use the new genai client for text generation
+            model = self.veo_client.models.generate_content(
+                model='gemini-2.0-flash-exp',
+                contents=prompt
+            )
+            response_text = model.text
 
-            json_string = response.text.strip()
+            json_string = response_text.strip()
             if '```json' in json_string:
                 start = json_string.find('```json') + 7
                 end = json_string.find('```', start)
@@ -320,62 +343,66 @@ class InstagramPostGenerator:
 
     def generate_ready_post(self, inspiration: InspirationPost, niche: str) -> GeneratedPost:
         try:
-            # Create optimized prompt for vertical video
-            video_prompt = f"""
-            Create a dynamic 5-second Instagram Reel in 9:16 vertical format.
-            Scene: {inspiration.imageDescription[:200]}
-            Style: {niche}, aesthetic, professional, engaging, viral-worthy
-            Motion: Smooth camera movement, dynamic action
-            Quality: High-resolution, vibrant colors, Instagram-optimized
-            """
+            # Create optimized prompt for vertical video using Veo 3
+            video_prompt = f"""A high-quality 8-second Instagram Reel in 9:16 vertical format.
 
-            print(f"🎬 Generating {niche} video using Replicate API...")
-            print(f"📝 Prompt: {video_prompt[:100]}...")
+{inspiration.imageDescription[:250]}
 
-            video_url = None
-            
-            # Try each model until one works
-            for model_name in self.video_models:
-                try:
-                    print(f"🎥 Trying model: {model_name}")
-                    
-                    output = replicate.run(
-                        model_name,
-                        input={
-                            "prompt": video_prompt,
-                            "aspect_ratio": "9:16",
-                            "duration": 5
-                        }
-                    )
-                    
-                    # Handle different output formats
-                    if isinstance(output, str):
-                        video_url = output
-                    elif isinstance(output, list) and len(output) > 0:
-                        video_url = output[0]
-                    elif hasattr(output, 'url'):
-                        video_url = output.url
-                    
-                    if video_url:
-                        print(f"✅ Video generated successfully with {model_name}")
-                        break
-                        
-                except Exception as model_error:
-                    print(f"⚠️ Model {model_name} failed: {str(model_error)[:100]}")
-                    continue
-            
-            if not video_url:
-                raise Exception("All Replicate video models failed to generate content")
-            
-            print(f"🔗 Replicate video URL: {video_url}")
+The video should be {niche}-focused, professional, aesthetic, and Instagram-ready with dynamic camera movement, smooth transitions, and cinematic quality. Energetic, viral-worthy, and attention-grabbing mood. High-resolution with vibrant colors and sharp details optimized for mobile viewing."""
 
+            print(f"🎬 Generating {niche} video using Google Veo 3...")
+            print(f"📝 Prompt: {video_prompt[:150]}...")
+
+            # Generate video using Veo 3
+            print("🎥 Calling Veo 3 model...")
+            
+            operation = self.veo_client.models.generate_videos(
+                model="veo-3.0-generate-001",
+                prompt=video_prompt,
+            )
+            
+            # Poll the operation status until the video is ready
+            max_wait_time = 300  # 5 minutes timeout
+            start_time = time.time()
+            poll_count = 0
+            
+            while not operation.done:
+                if time.time() - start_time > max_wait_time:
+                    raise Exception("Video generation timed out after 5 minutes")
+                
+                poll_count += 1
+                print(f"⏳ Waiting for video generation to complete... (poll #{poll_count})")
+                time.sleep(10)
+                operation = self.veo_client.operations.get(operation)
+            
+            print("✅ Video generation completed!")
+            
+            # Download the generated video
+            generated_video = operation.response.generated_videos[0]
+            
+            # Create temp file to save video
+            temp_dir = tempfile.mkdtemp()
+            temp_video_path = os.path.join(temp_dir, f"{niche}_temp_{int(time.time())}.mp4")
+            
+            # Download and save video
+            print("📥 Downloading generated video...")
+            self.veo_client.files.download(file=generated_video.video)
+            generated_video.video.save(temp_video_path)
+            print(f"✅ Video saved temporarily to {temp_video_path}")
+            
             # Upload to Cloudinary for permanent hosting
             filename = f"{niche}_reel_{int(time.time())}"
-            final_video_url = self.cloudinary_uploader.upload_video_from_url(video_url, filename)
+            final_video_url = self.cloudinary_uploader.upload_video_from_file(temp_video_path, filename)
             print(f"✅ Video uploaded to Cloudinary: {final_video_url}")
+            
+            # Clean up temp file
+            try:
+                os.remove(temp_video_path)
+                os.rmdir(temp_dir)
+            except:
+                pass
 
             # Generate caption and hashtags using Gemini
-            text_model = genai.GenerativeModel('gemini-2.0-flash-exp')
             text_prompt = f"""
             Create engaging Instagram content for a **REEL** in the {niche} niche.
             Inspiration caption: "{inspiration.caption}"
@@ -394,12 +421,9 @@ class InstagramPostGenerator:
             }}
             """
 
-            text_response = text_model.generate_content(
-                text_prompt,
-                generation_config=genai.GenerationConfig(
-                    temperature=0.8,
-                    max_output_tokens=400
-                )
+            text_response = self.veo_client.models.generate_content(
+                model='gemini-2.0-flash-exp',
+                contents=text_prompt
             )
 
             json_string = text_response.text.strip()
@@ -423,6 +447,11 @@ class InstagramPostGenerator:
         except Exception as error:
             print(f"Error generating ready post: {error}")
             raise Exception(f"Failed to generate post content for Reel: {str(error)}")
+    
+    def _generate_from_images_fallback(self, inspiration: InspirationPost, niche: str) -> GeneratedPost:
+        """Fallback method: Generate video from multiple AI images if Veo fails"""
+        print("📸 Generating image-based video as fallback...")
+        raise Exception("Veo 3 video generation is not available yet. Please use image-based generation or wait for API access.")
 
     def _get_current_season(self) -> str:
         month = datetime.now().month
@@ -511,10 +540,9 @@ class InstagramPublisher:
 
 
 def main():
-    print("🤖 Instagram REEL Generator with Replicate API Starting...")
+    print("🤖 Instagram REEL Generator with Google Veo 3 Starting...")
 
     google_api_key = os.getenv('GOOGLE_API_KEY')
-    replicate_api_token = os.getenv('REPLICATE_API_TOKEN')
     cloudinary_cloud_name = os.getenv('CLOUDINARY_CLOUD_NAME')
     cloudinary_upload_preset = os.getenv('CLOUDINARY_UPLOAD_PRESET')
     cloudinary_api_key = os.getenv('CLOUDINARY_API_KEY')
@@ -524,7 +552,6 @@ def main():
 
     required_vars = {
         'GOOGLE_API_KEY': google_api_key,
-        'REPLICATE_API_TOKEN': replicate_api_token,
         'CLOUDINARY_CLOUD_NAME': cloudinary_cloud_name,
         'CLOUDINARY_UPLOAD_PRESET': cloudinary_upload_preset,
         'CLOUDINARY_API_KEY': cloudinary_api_key,
@@ -536,7 +563,6 @@ def main():
     missing_vars = [var for var, value in required_vars.items() if not value]
     if missing_vars:
         print(f"❌ Missing critical environment variables: {', '.join(missing_vars)}")
-        print("Get Replicate API token (with free credits): https://replicate.com")
         return 
 
     try:
@@ -549,7 +575,7 @@ def main():
         )
 
         generator = InstagramPostGenerator(
-            google_api_key, replicate_api_token, cloudinary_uploader
+            google_api_key, cloudinary_uploader
         )
 
         print("📥 Loading post history...")
