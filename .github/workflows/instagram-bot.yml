@@ -1,4 +1,4 @@
-name: Instagram Bot
+name: Instagram Bot Reels
 on:
   schedule:
     - cron: '0 9 * * *'   # 9 AM UTC
