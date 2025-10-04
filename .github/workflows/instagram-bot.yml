@@ -13,6 +13,10 @@ on:
         description: 'Number of images in reel'
         required: false
         default: '20'
+      duration:
+        description: 'Total video duration in seconds (10-90)'
+        required: false
+        default: '15'
 
 jobs:
   post:
@@ -43,6 +47,7 @@ jobs:
           INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
           REEL_NICHE: ${{ github.event.inputs.niche || 'travel' }}
           REEL_IMAGES: ${{ github.event.inputs.num_images || '20' }}
+          REEL_DURATION: ${{ github.event.inputs.duration || '15' }}
         run: |
           python insta_reels.py
 
