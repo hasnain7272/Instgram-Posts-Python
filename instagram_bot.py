@@ -1,17 +1,18 @@
 """
-Instagram Reel Auto-Generator using Google Veo 3 for Text-to-Video
+Instagram Reel Auto-Generator using HuggingFace InferenceClient with Replicate Provider
 
 Required packages:
-pip install google-genai requests
+pip install huggingface_hub requests
 
 Required Environment Variables:
-- GOOGLE_API_KEY: Google Gemini API key (with Veo 3 access)
+- HUGGINGFACE_TOKEN: Hugging Face API token
 - CLOUDINARY_CLOUD_NAME: Cloudinary cloud name
 - CLOUDINARY_UPLOAD_PRESET: Cloudinary upload preset
 - CLOUDINARY_API_KEY: Cloudinary API key
 - CLOUDINARY_API_SECRET: Cloudinary API secret
 - INSTAGRAM_ACCOUNT_ID: Instagram Business Account ID
 - INSTAGRAM_ACCESS_TOKEN: Instagram Graph API access token
+- GOOGLE_API_KEY: Google Gemini API key (for captions/inspiration)
 """
 
 import json
@@ -26,10 +27,15 @@ from dataclasses import dataclass, asdict
 from io import BytesIO
 
 try:
-    from google import genai
-    from google.genai import types
+    from huggingface_hub import InferenceClient
 except ImportError:
-    print("❌ google-genai not installed. Run: pip install google-genai")
+    print("❌ huggingface_hub not installed. Run: pip install huggingface_hub")
+    raise
+
+try:
+    import google.generativeai as genai
+except ImportError:
+    print("❌ google-generativeai not installed. Run: pip install google-generativeai")
     raise
 
 
@@ -269,11 +275,24 @@ class PostHistoryManager:
 
 
 class InstagramPostGenerator:
-    def __init__(self, google_api_key: str, cloudinary_uploader: CloudinaryVideoUploader):
+    def __init__(self, google_api_key: str, hf_token: str, cloudinary_uploader: CloudinaryVideoUploader):
+        genai.configure(api_key=google_api_key)
         self.google_api_key = google_api_key
+        self.hf_token = hf_token
         self.cloudinary_uploader = cloudinary_uploader
-        # Initialize Veo 3 client
-        self.veo_client = genai.Client(api_key=google_api_key)
+        
+        # Initialize HuggingFace InferenceClient with Replicate provider
+        self.hf_client = InferenceClient(
+            provider="replicate",
+            api_key=hf_token
+        )
+        
+        # Text-to-video models to try (in order of preference)
+        self.video_models = [
+            "Wan-AI/Wan2.2-TI2V-5B",
+            "minimax/video-01",
+            "lucataco/hailuo-minimax-video"
+        ]
         
         self.search_templates = [
             "viral Instagram Reels {niche} high engagement 2025 Current",
@@ -307,14 +326,10 @@ class InstagramPostGenerator:
         """
 
         try:
-            # Use the new genai client for text generation
-            model = self.veo_client.models.generate_content(
-                model='gemini-2.0-flash-exp',
-                contents=prompt
-            )
-            response_text = model.text
+            model = genai.GenerativeModel('gemini-2.0-flash-exp')
+            response = model.generate_content(prompt)
 
-            json_string = response_text.strip()
+            json_string = response.text.strip()
             if '```json' in json_string:
                 start = json_string.find('```json') + 7
                 end = json_string.find('```', start)
@@ -343,52 +358,52 @@ class InstagramPostGenerator:
 
     def generate_ready_post(self, inspiration: InspirationPost, niche: str) -> GeneratedPost:
         try:
-            # Create optimized prompt for vertical video using Veo 3
-            video_prompt = f"""A high-quality 8-second Instagram Reel in 9:16 vertical format.
+            # Create concise prompt optimized for text-to-video
+            video_prompt = f"{inspiration.imageDescription[:200]}, {niche} style, 9:16 vertical format, professional Instagram reel, dynamic camera movement, high quality"
 
-{inspiration.imageDescription[:250]}
+            print(f"🎬 Generating {niche} video using HuggingFace/Replicate...")
+            print(f"📝 Prompt: {video_prompt[:100]}...")
 
-The video should be {niche}-focused, professional, aesthetic, and Instagram-ready with dynamic camera movement, smooth transitions, and cinematic quality. Energetic, viral-worthy, and attention-grabbing mood. High-resolution with vibrant colors and sharp details optimized for mobile viewing."""
-
-            print(f"🎬 Generating {niche} video using Google Veo 3...")
-            print(f"📝 Prompt: {video_prompt[:150]}...")
-
-            # Generate video using Veo 3
-            print("🎥 Calling Veo 3 model...")
+            video_file = None
             
-            operation = self.veo_client.models.generate_videos(
-                model="veo-3.0-generate-001",
-                prompt=video_prompt,
-            )
+            # Try each model until one works
+            for model_name in self.video_models:
+                try:
+                    print(f"🎥 Trying model: {model_name}")
+                    
+                    # Generate video using HuggingFace InferenceClient
+                    video_file = self.hf_client.text_to_video(
+                        video_prompt,
+                        model=model_name
+                    )
+                    
+                    if video_file:
+                        print(f"✅ Video generated successfully with {model_name}")
+                        break
+                        
+                except Exception as model_error:
+                    error_msg = str(model_error)
+                    print(f"⚠️ Model {model_name} failed: {error_msg[:150]}")
+                    
+                    # Check for rate limiting
+                    if "429" in error_msg or "throttled" in error_msg.lower():
+                        print("⏳ Rate limited, waiting 30 seconds before next attempt...")
+                        time.sleep(30)
+                    
+                    continue
             
-            # Poll the operation status until the video is ready
-            max_wait_time = 300  # 5 minutes timeout
-            start_time = time.time()
-            poll_count = 0
+            if not video_file:
+                raise Exception("All video generation models failed. Please try again later.")
             
-            while not operation.done:
-                if time.time() - start_time > max_wait_time:
-                    raise Exception("Video generation timed out after 5 minutes")
-                
-                poll_count += 1
-                print(f"⏳ Waiting for video generation to complete... (poll #{poll_count})")
-                time.sleep(10)
-                operation = self.veo_client.operations.get(operation)
-            
-            print("✅ Video generation completed!")
-            
-            # Download the generated video
-            generated_video = operation.response.generated_videos[0]
-            
-            # Create temp file to save video
+            # Save video to temporary file
             temp_dir = tempfile.mkdtemp()
             temp_video_path = os.path.join(temp_dir, f"{niche}_temp_{int(time.time())}.mp4")
             
-            # Download and save video
-            print("📥 Downloading generated video...")
-            self.veo_client.files.download(file=generated_video.video)
-            generated_video.video.save(temp_video_path)
-            print(f"✅ Video saved temporarily to {temp_video_path}")
+            print("💾 Saving generated video...")
+            with open(temp_video_path, 'wb') as f:
+                f.write(video_file)
+            
+            print(f"✅ Video saved to: {temp_video_path}")
             
             # Upload to Cloudinary for permanent hosting
             filename = f"{niche}_reel_{int(time.time())}"
@@ -403,6 +418,7 @@ The video should be {niche}-focused, professional, aesthetic, and Instagram-read
                 pass
 
             # Generate caption and hashtags using Gemini
+            text_model = genai.GenerativeModel('gemini-2.0-flash-exp')
             text_prompt = f"""
             Create engaging Instagram content for a **REEL** in the {niche} niche.
             Inspiration caption: "{inspiration.caption}"
@@ -421,9 +437,12 @@ The video should be {niche}-focused, professional, aesthetic, and Instagram-read
             }}
             """
 
-            text_response = self.veo_client.models.generate_content(
-                model='gemini-2.0-flash-exp',
-                contents=text_prompt
+            text_response = text_model.generate_content(
+                text_prompt,
+                generation_config=genai.GenerationConfig(
+                    temperature=0.8,
+                    max_output_tokens=400
+                )
             )
 
             json_string = text_response.text.strip()
@@ -447,11 +466,6 @@ The video should be {niche}-focused, professional, aesthetic, and Instagram-read
         except Exception as error:
             print(f"Error generating ready post: {error}")
             raise Exception(f"Failed to generate post content for Reel: {str(error)}")
-    
-    def _generate_from_images_fallback(self, inspiration: InspirationPost, niche: str) -> GeneratedPost:
-        """Fallback method: Generate video from multiple AI images if Veo fails"""
-        print("📸 Generating image-based video as fallback...")
-        raise Exception("Veo 3 video generation is not available yet. Please use image-based generation or wait for API access.")
 
     def _get_current_season(self) -> str:
         month = datetime.now().month
@@ -540,9 +554,10 @@ class InstagramPublisher:
 
 
 def main():
-    print("🤖 Instagram REEL Generator with Google Veo 3 Starting...")
+    print("🤖 Instagram REEL Generator with HuggingFace/Replicate Starting...")
 
     google_api_key = os.getenv('GOOGLE_API_KEY')
+    huggingface_token = os.getenv('HUGGINGFACE_TOKEN')
     cloudinary_cloud_name = os.getenv('CLOUDINARY_CLOUD_NAME')
     cloudinary_upload_preset = os.getenv('CLOUDINARY_UPLOAD_PRESET')
     cloudinary_api_key = os.getenv('CLOUDINARY_API_KEY')
@@ -552,6 +567,7 @@ def main():
 
     required_vars = {
         'GOOGLE_API_KEY': google_api_key,
+        'HUGGINGFACE_TOKEN': huggingface_token,
         'CLOUDINARY_CLOUD_NAME': cloudinary_cloud_name,
         'CLOUDINARY_UPLOAD_PRESET': cloudinary_upload_preset,
         'CLOUDINARY_API_KEY': cloudinary_api_key,
@@ -575,7 +591,7 @@ def main():
         )
 
         generator = InstagramPostGenerator(
-            google_api_key, cloudinary_uploader
+            google_api_key, huggingface_token, cloudinary_uploader
         )
 
         print("📥 Loading post history...")
