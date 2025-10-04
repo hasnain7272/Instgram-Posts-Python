@@ -4,7 +4,7 @@ on:
     - cron: '0 9 * * *'   # 9 AM UTC
     - cron: '0 15 * * *'  # 3 PM UTC  
     - cron: '0 21 * * *'  # 9 PM UTC
-  workflow_dispatch:  # Manual trigger
+  workflow_dispatch:
 
 jobs:
   post:
@@ -17,13 +17,13 @@ jobs:
           python-version: '3.11'
       
       - name: Install dependencies
-        run: pip install google-generativeai huggingface_hub requests pillow moviepy
-        
+        run: pip install google-generativeai replicate requests pillow
+      
       - name: Run Instagram Bot
         run: python instagram_bot.py
         env:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-          HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
+          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
           CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
           CLOUDINARY_UPLOAD_PRESET: ${{ secrets.CLOUDINARY_UPLOAD_PRESET }}
           CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
