@@ -96,15 +96,15 @@ class ReelGenerator:
         
         # Music mapping by niche (royalty-free sources)
         music_urls = {
-            'travel': 'https://cdn.pixabay.com/download/audio/2022/03/10/audio_4c3a8b0a91.mp3',  # Upbeat Travel
-            'food': 'https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3',  # Cooking
-            'fitness': 'https://cdn.pixabay.com/download/audio/2022/03/24/audio_1e87a94317.mp3',  # Energetic
-            'motivation': 'https://cdn.pixabay.com/download/audio/2022/05/27/audio_d0e4d42c6e.mp3',  # Inspiring
-            'lifestyle': 'https://cdn.pixabay.com/download/audio/2022/03/15/audio_51e9045c43.mp3',  # Chill
-            'aesthetic': 'https://cdn.pixabay.com/download/audio/2022/08/02/audio_4dcc0c2e8c.mp3',  # Ambient
-            'fashion': 'https://cdn.pixabay.com/download/audio/2022/11/22/audio_ecbd4e2c93.mp3',  # Trendy
-            'tech': 'https://cdn.pixabay.com/download/audio/2022/05/27/audio_595d49853a.mp3',  # Electronic
-            'nature': 'https://cdn.pixabay.com/download/audio/2022/03/10/audio_8956e99b09.mp3',  # Peaceful
+            'travel': 'https://www.bensound.com/bensound-music/bensound-sunny.mp3',
+            'food': 'https://www.bensound.com/bensound-music/bensound-jazzyfrenchy.mp3',
+            'fitness': 'https://www.bensound.com/bensound-music/bensound-energy.mp3',
+            'motivation': 'https://www.bensound.com/bensound-music/bensound-epic.mp3',
+            'lifestyle': 'https://www.bensound.com/bensound-music/bensound-slowmotion.mp3',
+            'aesthetic': 'https://www.bensound.com/bensound-music/bensound-creativeminds.mp3',
+            'fashion': 'https://www.bensound.com/bensound-music/bensound-cute.mp3',
+            'tech': 'https://www.bensound.com/bensound-music/bensound-highoctane.mp3',
+            'nature': 'https://www.bensound.com/bensound-music/bensound-relaxing.mp3',
         }
         
         # Default music if niche not found
