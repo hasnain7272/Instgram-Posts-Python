@@ -1,10 +1,23 @@
-name: Instagram Bot
+name: Instagram Reel Auto Post
+
 on:
   schedule:
-    - cron: '0 9 * * *'   # 9 AM UTC
-    - cron: '0 15 * * *'  # 3 PM UTC  
-    - cron: '0 21 * * *'  # 9 PM UTC
-  workflow_dispatch:  # Manual trigger
+    - cron: '0 12 * * *'  # Daily at 12 PM UTC
+  workflow_dispatch:
+    inputs:
+      niche:
+        description: 'Reel niche (travel, food, fitness, etc.)'
+        required: false
+        default: 'travel'
+      num_images:
+        description: 'Number of images in reel'
+        required: false
+        default: '20'
+      duration:
+        description: 'Total video duration in seconds (10-90)'
+        required: false
+        default: '15'
+
 jobs:
   post:
     runs-on: ubuntu-latest
@@ -14,7 +27,16 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install google-generativeai requests
-      - run: python instagram_bot.py
+      
+      - name: Download and install ffmpeg
+        run: |
+          mkdir -p $HOME/bin
+          curl -L https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz -o ffmpeg.tar.xz
+          tar -xf ffmpeg.tar.xz
+          mv ffmpeg-*-amd64-static/ffmpeg $HOME/bin/
+          echo "$HOME/bin" >> $GITHUB_PATH
+  
+      - name: Generate and Post Reel
         env:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
@@ -23,4 +45,16 @@ jobs:
           CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
           INSTAGRAM_ACCOUNT_ID: ${{ secrets.INSTAGRAM_ACCOUNT_ID }}
           INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
-          HUGGINGFACE_TOKEN : ${{ secrets.HUGGINGFACE_TOKEN }}
+          REEL_NICHE: ${{ github.event.inputs.niche || 'travel' }}
+          REEL_IMAGES: ${{ github.event.inputs.num_images || '20' }}
+          REEL_DURATION: ${{ github.event.inputs.duration || '15' }}
+        run: |
+          python insta_reels.py
+
+      - name: Success
+        if: success()
+        run: echo "✅ Reel posted successfully!"
+    
+      - name: Failure
+        if: failure()
+        run: echo "❌ Failed to post reel"
