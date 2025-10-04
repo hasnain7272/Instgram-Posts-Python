@@ -1,12 +1,12 @@
 """
-Instagram Reel Auto-Generator using Free Hugging Face APIs
+Instagram Reel Auto-Generator using Replicate API for Text-to-Video
 
 Required packages:
-pip install google-generativeai huggingface_hub requests pillow moviepy
+pip install google-generativeai replicate requests pillow
 
 Required Environment Variables:
 - GOOGLE_API_KEY: Google Gemini API key
-- HUGGINGFACE_TOKEN: Hugging Face access token
+- REPLICATE_API_TOKEN: Replicate API token (get free credits at replicate.com)
 - CLOUDINARY_CLOUD_NAME: Cloudinary cloud name
 - CLOUDINARY_UPLOAD_PRESET: Cloudinary upload preset
 - CLOUDINARY_API_KEY: Cloudinary API key
@@ -17,7 +17,6 @@ Required Environment Variables:
 
 import json
 import time
-import base64
 import requests
 import os
 import hashlib
@@ -25,8 +24,6 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from dataclasses import dataclass, asdict
 from io import BytesIO
-import io
-import tempfile
 
 try:
     import google.generativeai as genai
@@ -35,22 +32,10 @@ except ImportError:
     raise
 
 try:
-    from huggingface_hub import InferenceClient
+    import replicate
 except ImportError:
-    print("❌ huggingface_hub not installed. Run: pip install huggingface_hub")
+    print("❌ replicate not installed. Run: pip install replicate")
     raise
-
-try:
-    from PIL import Image
-except ImportError:
-    print("❌ Pillow not installed. Run: pip install pillow")
-    raise
-
-try:
-    from moviepy.editor import ImageClip, concatenate_videoclips
-except ImportError:
-    print("❌ moviepy not installed. Run: pip install moviepy")
-    raise 
 
 
 @dataclass
@@ -88,20 +73,16 @@ class CloudinaryVideoUploader:
         self.base_url = f"https://api.cloudinary.com/v1_1/{self.cloud_name}/video/upload"
 
     def generate_signature(self, params: dict) -> str:
-        # Re-importing here for completeness, though it's already at the top
-        import hashlib 
-
         excluded_params = {'file', 'cloud_name', 'resource_type', 'api_key'}
         filtered_params = {k: v for k, v in params.items() if k not in excluded_params}
         sorted_params = sorted(filtered_params.items())
         string_to_sign = '&'.join(f"{k}={v}" for k, v in sorted_params)
         string_to_sign += self.api_secret
         signature = hashlib.sha1(string_to_sign.encode('utf-8')).hexdigest()
-
         return signature
 
-    # NEW METHOD: Uploads binary video data
-    def upload_video_from_bytes(self, video_bytes: bytes, filename: str) -> str:
+    def upload_video_from_url(self, video_url: str, filename: str) -> str:
+        """Upload video from URL to Cloudinary"""
         timestamp = int(time.time())
         public_id = f"reel_{filename}_{timestamp}"
 
@@ -116,6 +97,7 @@ class CloudinaryVideoUploader:
         signature = self.generate_signature(params)
 
         data = {
+            'file': video_url,  # Cloudinary can fetch from URL
             'api_key': self.api_key,
             'timestamp': timestamp,
             'upload_preset': self.upload_preset,
@@ -123,23 +105,17 @@ class CloudinaryVideoUploader:
             'public_id': public_id
         }
 
-        # Use BytesIO to simulate a file for the requests library
-        files = {'file': (f'{filename}.mp4', BytesIO(video_bytes), 'video/mp4')}
-
         print("☁️ Uploading video to Cloudinary...")
-        response = requests.post(self.base_url, files=files, data=data, timeout=60)
+        response = requests.post(self.base_url, data=data, timeout=120)
 
         if response.status_code != 200:
             raise Exception(f"Cloudinary upload failed: {response.text}")
 
         video_data = response.json()
-
-        # Return the secure HTTPS URL
-        return video_data['secure_url'] 
+        return video_data['secure_url']
 
 
 class PostHistoryManager:
-    # Initializing with Cloudinary credentials to manage history
     def __init__(self, cloudinary_cloud_name: str, cloudinary_upload_preset: str, api_key: str, api_secret: str):
         self.cloud_name = cloudinary_cloud_name
         self.upload_preset = cloudinary_upload_preset
@@ -147,19 +123,13 @@ class PostHistoryManager:
         self.api_key = api_key
         self.api_secret = api_secret
 
-    # NOTE: The generate_signature and other methods are inherited from the original script
-    # and were verified as correct for the Cloudinary raw file API.
     def generate_signature(self, params: dict) -> str:
-        # Re-importing here for completeness, though it's already at the top
-        import hashlib 
-
         excluded_params = {'file', 'cloud_name', 'resource_type', 'api_key'}
         filtered_params = {k: v for k, v in params.items() if k not in excluded_params}
         sorted_params = sorted(filtered_params.items())
         string_to_sign = '&'.join(f"{k}={v}" for k, v in sorted_params)
         string_to_sign += self.api_secret
         signature = hashlib.sha1(string_to_sign.encode('utf-8')).hexdigest()
-
         return signature
 
     def download_history(self) -> List[PostMetadata]:
@@ -187,7 +157,6 @@ class PostHistoryManager:
                 posts = data.get('posts', [])
                 return [PostMetadata(**post) for post in posts]
             else:
-                # 404 is expected on first run
                 print("No existing post history found, starting fresh")
                 return []
 
@@ -196,7 +165,6 @@ class PostHistoryManager:
             return []
 
     def upload_history(self, history: List[PostMetadata]) -> None:
-        # (History upload logic is unchanged)
         try:
             history_data = {
                 'posts': [asdict(post) for post in history],
@@ -210,7 +178,7 @@ class PostHistoryManager:
                 'public_id': self.history_file,
                 'timestamp': timestamp,
                 'upload_preset': self.upload_preset,
-                'resource_type': 'raw' # Important for non-image files
+                'resource_type': 'raw'
             }
 
             signature = self.generate_signature(params)
@@ -233,7 +201,6 @@ class PostHistoryManager:
         except Exception as e:
             print(f"Error uploading history: {e}")
 
-    # (Duplicate content and niche logic remains unchanged)
     def is_duplicate_content(self, new_description: str, new_keywords: List[str], 
                            new_hashtags: List[str], history: List[PostMetadata]) -> bool:
         new_desc_hash = hashlib.md5(new_description.lower().encode()).hexdigest()
@@ -273,15 +240,22 @@ class PostHistoryManager:
 
 
 class InstagramPostGenerator:
-    def __init__(self, google_api_key: str, hf_token: str, cloudinary_uploader: CloudinaryVideoUploader):
+    def __init__(self, google_api_key: str, replicate_api_token: str, cloudinary_uploader: CloudinaryVideoUploader):
         genai.configure(api_key=google_api_key)
         self.google_api_key = google_api_key
-        self.hf_token = hf_token
+        self.replicate_api_token = replicate_api_token
         self.cloudinary_uploader = cloudinary_uploader
-        # Initialize Hugging Face Inference Client
-        self.hf_client = InferenceClient(token=hf_token)
-        # Using working text-to-image model
-        self.image_model = "black-forest-labs/FLUX.1-schnell"
+        
+        # Set Replicate API token
+        os.environ["REPLICATE_API_TOKEN"] = replicate_api_token
+        
+        # Video generation models (in order of preference)
+        self.video_models = [
+            "lucataco/hailuo-minimax-video",  # Fast and reliable
+            "minimax/video-01",  # Good quality
+            "bytedance/i2vgen-xl"  # Backup option
+        ]
+        
         self.search_templates = [
             "viral Instagram Reels {niche} high engagement 2025 Current",
             "trending {niche} short-form video content Instagram",
@@ -290,7 +264,6 @@ class InstagramPostGenerator:
             "Instagram growth {niche} content formats trending"
         ]
 
-    # (fetch_inspiration_posts logic is unchanged)
     def fetch_inspiration_posts(self, niche: str, season: str = None) -> List[InspirationPost]:
         if not season:
             season = self._get_current_season()
@@ -319,7 +292,6 @@ class InstagramPostGenerator:
             response = model.generate_content(prompt)
 
             json_string = response.text.strip()
-            # Clean up JSON
             if '```json' in json_string:
                 start = json_string.find('```json') + 7
                 end = json_string.find('```', start)
@@ -346,138 +318,64 @@ class InstagramPostGenerator:
             print(f"Error fetching inspiration posts: {error}")
             raise Exception("Failed to find inspiration. Please check your API key and try again.")
 
-    def _create_video_from_images(self, images: List[Image.Image]) -> bytes:
-        """Create MP4 video from images using moviepy"""
-        try:
-            print("🎥 Creating video from images using moviepy...")
-            
-            # Create temporary directory for images
-            temp_dir = tempfile.mkdtemp()
-            temp_images = []
-            
-            # Save images to temp files
-            for i, img in enumerate(images):
-                # Resize to 9:16 format
-                img_resized = img.resize((1080, 1920), Image.LANCZOS)
-                if img_resized.mode != 'RGB':
-                    img_resized = img_resized.convert('RGB')
-                
-                temp_path = os.path.join(temp_dir, f"frame_{i}.jpg")
-                img_resized.save(temp_path, 'JPEG', quality=95)
-                temp_images.append(temp_path)
-            
-            # Create video clips from images
-            clips = []
-            for img_path in temp_images:
-                clip = ImageClip(img_path, duration=1.0)  # 1 second per image
-                clips.append(clip)
-            
-            # Concatenate clips
-            final_clip = concatenate_videoclips(clips, method="compose")
-            
-            # Write video to temp file
-            temp_video = os.path.join(temp_dir, "output.mp4")
-            final_clip.write_videofile(
-                temp_video,
-                fps=30,
-                codec='libx264',
-                audio=False,
-                preset='ultrafast',
-                logger=None  # Suppress moviepy logs
-            )
-            
-            # Read video bytes
-            with open(temp_video, 'rb') as f:
-                video_bytes = f.read()
-            
-            # Cleanup
-            final_clip.close()
-            for clip in clips:
-                clip.close()
-            
-            # Remove temp files
-            for temp_file in temp_images + [temp_video]:
-                try:
-                    os.remove(temp_file)
-                except:
-                    pass
-            
-            try:
-                os.rmdir(temp_dir)
-            except:
-                pass
-            
-            print(f"✅ Video created successfully!")
-            return video_bytes
-            
-        except Exception as e:
-            print(f"❌ Error creating video: {e}")
-            raise
-
     def generate_ready_post(self, inspiration: InspirationPost, niche: str) -> GeneratedPost:
         try:
-            # Create optimized prompt for vertical content
-            base_prompt = f"{inspiration.imageDescription[:150]}, {niche} aesthetic, professional quality, 9:16 vertical format, instagram reel style, dynamic scene"
+            # Create optimized prompt for vertical video
+            video_prompt = f"""
+            Create a dynamic 5-second Instagram Reel in 9:16 vertical format.
+            Scene: {inspiration.imageDescription[:200]}
+            Style: {niche}, aesthetic, professional, engaging, viral-worthy
+            Motion: Smooth camera movement, dynamic action
+            Quality: High-resolution, vibrant colors, Instagram-optimized
+            """
+
+            print(f"🎬 Generating {niche} video using Replicate API...")
+            print(f"📝 Prompt: {video_prompt[:100]}...")
+
+            video_url = None
             
-            print(f"🎬 Generating {niche} content via Hugging Face...")
-            print(f"📝 Using text-to-image model: {self.image_model}")
-            
-            images = []
-            num_frames = 5  # Generate 5 images for ~5 second video
-            
-            for i in range(num_frames):
+            # Try each model until one works
+            for model_name in self.video_models:
                 try:
-                    # Add variation to each frame
-                    if i == 0:
-                        prompt = f"{base_prompt}, opening shot"
-                    elif i == num_frames - 1:
-                        prompt = f"{base_prompt}, closing shot"
-                    else:
-                        prompt = f"{base_prompt}, scene {i+1}, different angle"
+                    print(f"🎥 Trying model: {model_name}")
                     
-                    print(f"🖼️ Generating frame {i+1}/{num_frames}...")
-                    
-                    # Use InferenceClient for image generation
-                    image = self.hf_client.text_to_image(
-                        prompt=prompt,
-                        model=self.image_model,
-                        height=1920,
-                        width=1080
+                    output = replicate.run(
+                        model_name,
+                        input={
+                            "prompt": video_prompt,
+                            "aspect_ratio": "9:16",
+                            "duration": 5
+                        }
                     )
                     
-                    images.append(image)
-                    print(f"✅ Frame {i+1} generated successfully")
+                    # Handle different output formats
+                    if isinstance(output, str):
+                        video_url = output
+                    elif isinstance(output, list) and len(output) > 0:
+                        video_url = output[0]
+                    elif hasattr(output, 'url'):
+                        video_url = output.url
                     
-                    # Small delay to avoid rate limiting
-                    if i < num_frames - 1:
-                        time.sleep(2)
-                    
-                except Exception as frame_error:
-                    print(f"⚠️ Error generating frame {i+1}: {frame_error}")
-                    if i == 0:  # If first frame fails, we can't continue
-                        raise
-                    # Skip this frame if it's not the first one
-                    print(f"Continuing with {len(images)} frames...")
-                    break
+                    if video_url:
+                        print(f"✅ Video generated successfully with {model_name}")
+                        break
+                        
+                except Exception as model_error:
+                    print(f"⚠️ Model {model_name} failed: {str(model_error)[:100]}")
+                    continue
             
-            if not images:
-                raise Exception("No images were generated successfully")
+            if not video_url:
+                raise Exception("All Replicate video models failed to generate content")
             
-            print(f"✅ Generated {len(images)} frames")
-            
-            # Create video from images using moviepy
-            print("🎞️ Creating MP4 video from frames...")
-            video_bytes = self._create_video_from_images(images)
-            print(f"✅ Video created. Size: {len(video_bytes) / (1024 * 1024):.2f} MB")
+            print(f"🔗 Replicate video URL: {video_url}")
 
-            # Upload the video data to Cloudinary to get a public URL
+            # Upload to Cloudinary for permanent hosting
             filename = f"{niche}_reel_{int(time.time())}"
-            generated_video_url = self.cloudinary_uploader.upload_video_from_bytes(video_bytes, filename)
-            print(f"🔗 Public Video URL created: {generated_video_url}")
+            final_video_url = self.cloudinary_uploader.upload_video_from_url(video_url, filename)
+            print(f"✅ Video uploaded to Cloudinary: {final_video_url}")
 
-            # --- TEXT GENERATION (Using Gemini) ---
+            # Generate caption and hashtags using Gemini
             text_model = genai.GenerativeModel('gemini-2.0-flash-exp')
-
             text_prompt = f"""
             Create engaging Instagram content for a **REEL** in the {niche} niche.
             Inspiration caption: "{inspiration.caption}"
@@ -505,7 +403,6 @@ class InstagramPostGenerator:
             )
 
             json_string = text_response.text.strip()
-            # Clean up JSON
             if '```json' in json_string:
                 start = json_string.find('```json') + 7
                 end = json_string.find('```', start)
@@ -518,16 +415,14 @@ class InstagramPostGenerator:
             text_content = json.loads(json_string)
 
             return GeneratedPost(
-                video_url=generated_video_url,
+                video_url=final_video_url,
                 caption=text_content.get('caption', f'Amazing {niche} content!'),
-                hashtags=text_content.get('hashtags', [f'#{niche}', '#reels', '#viralreels', '#trending', '#shortformvideo', '#aesthetic', '#reeloftheday'])
+                hashtags=text_content.get('hashtags', [f'#{niche}', '#reels', '#viralreels', '#trending'])
             )
 
         except Exception as error:
             print(f"Error generating ready post: {error}")
-            # Remember not to give false hopes.
-            raise Exception("Failed to generate post content for Reel. Check API keys, especially the Hugging Face Token.")
-
+            raise Exception(f"Failed to generate post content for Reel: {str(error)}")
 
     def _get_current_season(self) -> str:
         month = datetime.now().month
@@ -563,7 +458,6 @@ class InstagramPublisher:
             }
 
             print(f"Creating media container for REEL...")
-            # Increased timeout for initial video creation
             container_response = requests.post(create_url, data=create_params, timeout=60) 
             container_data = container_response.json()
 
@@ -574,7 +468,7 @@ class InstagramPublisher:
             creation_id = container_data['id']
             print(f"Media container created: {creation_id}")
 
-            # Polling for video processing status
+            # Poll for video processing
             max_retries = 20
             for i in range(max_retries):
                 status_url = f"https://graph.facebook.com/{creation_id}"
@@ -594,7 +488,7 @@ class InstagramPublisher:
                 if i == max_retries - 1:
                     raise Exception("Media processing timeout")
 
-                time.sleep(10) # Wait longer (10s) for video processing
+                time.sleep(10)
 
             print("Publishing REEL...")
             publish_url = f"{self.base_url}/{account_id}/media_publish"
@@ -617,10 +511,10 @@ class InstagramPublisher:
 
 
 def main():
-    print("🤖 Enhanced Instagram REEL Generator (Open-Source/Free) Starting...")
+    print("🤖 Instagram REEL Generator with Replicate API Starting...")
 
     google_api_key = os.getenv('GOOGLE_API_KEY')
-    huggingface_token = os.getenv('HUGGINGFACE_TOKEN')
+    replicate_api_token = os.getenv('REPLICATE_API_TOKEN')
     cloudinary_cloud_name = os.getenv('CLOUDINARY_CLOUD_NAME')
     cloudinary_upload_preset = os.getenv('CLOUDINARY_UPLOAD_PRESET')
     cloudinary_api_key = os.getenv('CLOUDINARY_API_KEY')
@@ -628,11 +522,9 @@ def main():
     instagram_account_id = os.getenv('INSTAGRAM_ACCOUNT_ID')
     instagram_access_token = os.getenv('INSTAGRAM_ACCESS_TOKEN')
 
-    # HUGGINGFACE_VIDEO_URL is no longer required as it is hardcoded
-
     required_vars = {
         'GOOGLE_API_KEY': google_api_key,
-        'HUGGINGFACE_TOKEN': huggingface_token, # Needed for authentication
+        'REPLICATE_API_TOKEN': replicate_api_token,
         'CLOUDINARY_CLOUD_NAME': cloudinary_cloud_name,
         'CLOUDINARY_UPLOAD_PRESET': cloudinary_upload_preset,
         'CLOUDINARY_API_KEY': cloudinary_api_key,
@@ -644,11 +536,10 @@ def main():
     missing_vars = [var for var, value in required_vars.items() if not value]
     if missing_vars:
         print(f"❌ Missing critical environment variables: {', '.join(missing_vars)}")
-        print("Please set these variables to make the script fully functional.")
+        print("Get Replicate API token (with free credits): https://replicate.com")
         return 
 
     try:
-        # Initialize Cloudinary uploader first, as it's used for both history and video
         cloudinary_uploader = CloudinaryVideoUploader(
             cloudinary_cloud_name, cloudinary_upload_preset, cloudinary_api_key, cloudinary_api_secret
         )
@@ -658,7 +549,7 @@ def main():
         )
 
         generator = InstagramPostGenerator(
-            google_api_key, huggingface_token, cloudinary_uploader
+            google_api_key, replicate_api_token, cloudinary_uploader
         )
 
         print("📥 Loading post history...")
@@ -680,7 +571,6 @@ def main():
                     continue
                 raise Exception("No inspiration posts found")
 
-            # The content generation will now perform the video generation/upload
             generated_post = generator.generate_ready_post(inspiration_posts[0], next_niche)
 
             keywords = generator._extract_keywords(generated_post.caption)
@@ -700,8 +590,7 @@ def main():
 
         print(f"📝 Caption: {generated_post.caption}")
         print(f"🏷️ Hashtags: {' '.join(generated_post.hashtags)}")
-        media_url = generated_post.video_url
-        print(f"🔗 Final Reel Video URL: {media_url}")
+        print(f"🔗 Final Reel Video URL: {generated_post.video_url}")
 
         print("📱 Publishing REEL to Instagram...")
         publisher = InstagramPublisher()
@@ -710,7 +599,7 @@ def main():
         post_id = publisher.publish_post(
             account_id=instagram_account_id,
             access_token=instagram_access_token,
-            media_url=media_url,
+            media_url=generated_post.video_url,
             caption=full_caption
         )
 
@@ -731,8 +620,7 @@ def main():
         print("🎉 Reel published and history updated successfully!")
 
     except Exception as e:
-        print(f"\n\n❌ ERROR: The automated process failed. Please check the error message and setup: {e}")
-        # Re-raise the exception to stop execution gracefully
+        print(f"\n\n❌ ERROR: {e}")
         raise
 
 
