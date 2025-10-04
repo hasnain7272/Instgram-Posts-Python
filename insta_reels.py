@@ -300,22 +300,22 @@ def main():
         
         print(f"✅ Video URL: {video_url}")
         
-        # Publish to Instagram
-        # publisher = InstagramReelPublisher()
-        # full_caption = f"{reel_data['caption']}\n\n{' '.join(reel_data['hashtags'])}"
+        Publish to Instagram
+        publisher = InstagramReelPublisher()
+        full_caption = f"{reel_data['caption']}\n\n{' '.join(reel_data['hashtags'])}"
         
-        # post_id = publisher.publish_reel(
-        #     instagram_account_id,
-        #     instagram_access_token,
-        #     video_url,
-        #     full_caption
-        # )
+        post_id = publisher.publish_reel(
+            instagram_account_id,
+            instagram_access_token,
+            video_url,
+            full_caption
+        )
         
         print("=" * 50)
         print("🎉 REEL PUBLISHED SUCCESSFULLY!")
         print(f"📝 Caption: {reel_data['caption']}")
         print(f"🏷️ Hashtags: {' '.join(reel_data['hashtags'])}")
-        # print(f"🆔 Post ID: {post_id}")
+        print(f"🆔 Post ID: {post_id}")
         print("=" * 50)
         
     except Exception as e:
