@@ -7,7 +7,8 @@ from datetime import datetime
 import google.generativeai as genai
 import subprocess
 import tempfile
-import js
+import json
+
 class ReelGenerator:
     def __init__(self, google_api_key: str):
         genai.configure(api_key=google_api_key)
