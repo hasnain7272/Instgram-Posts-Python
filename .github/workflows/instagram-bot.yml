@@ -17,8 +17,8 @@ jobs:
           python-version: '3.11'
       
       - name: Install dependencies
-        run: pip install google-generativeai huggingface_hub requests pillow
-      
+        run: pip install google-generativeai huggingface_hub requests pillow moviepy
+        
       - name: Run Instagram Bot
         run: python instagram_bot.py
         env:
