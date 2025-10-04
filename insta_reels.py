@@ -62,7 +62,7 @@ class ReelGenerator:
         model = genai.GenerativeModel('gemini-2.0-flash-exp')
         
         prompt = f"""Generate {count} diverse, visually stunning image prompts for {niche} Instagram content.
-        Each prompt should be different but cohesive for a slideshow reel.
+        Each prompt should be different but cohesive and synchronize for a slideshow reel.
         Make each of them ultra-detailed and long for AI image generation.
         
         Return as JSON array of strings:
@@ -81,20 +81,35 @@ class ReelGenerator:
         return prompts[:count]
     
     def _generate_image(self, prompt: str) -> str:
-        """Generate single image using Pollinations.ai"""
+        """Generate single image with retry logic"""
         enhanced_prompt = f"{prompt}, ultra detailed, professional photography, vibrant colors, 4K quality"
         encoded = quote(enhanced_prompt)
-        url = f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=true&model=flux"
         
-        response = requests.get(url, timeout=60)
-        if response.status_code == 200:
-            return base64.b64encode(response.content).decode()
-        raise Exception(f"Image generation failed: {response.status_code}")
+        # Try multiple times with different approaches
+        attempts = [
+            f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=true&model=flux",
+            f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=true",
+            f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920"
+        ]
+        
+        for i, url in enumerate(attempts):
+            try:
+                response = requests.get(url, timeout=60)
+                if response.status_code == 200:
+                    return base64.b64encode(response.content).decode()
+                print(f"⚠️ Attempt {i+1} failed: {response.status_code}")
+            except Exception as e:
+                print(f"⚠️ Attempt {i+1} error: {e}")
+            
+            if i < len(attempts) - 1:
+                time.sleep(2)  # Wait before retry
+        
+        raise Exception(f"All image generation attempts failed")
     
     def _download_music(self, niche: str) -> str:
         """Download royalty-free music based on niche"""
         
-        # Music mapping by niche (royalty-free sources)
+        # Free Background Music (direct working links)
         music_urls = {
             'travel': 'https://www.bensound.com/bensound-music/bensound-sunny.mp3',
             'food': 'https://www.bensound.com/bensound-music/bensound-jazzyfrenchy.mp3',
@@ -107,20 +122,48 @@ class ReelGenerator:
             'nature': 'https://www.bensound.com/bensound-music/bensound-relaxing.mp3',
         }
         
-        # Default music if niche not found
         music_url = music_urls.get(niche.lower(), music_urls['lifestyle'])
         
         print(f"🎵 Downloading {niche} music...")
-        response = requests.get(music_url, timeout=30)
         
-        if response.status_code == 200:
-            temp_dir = tempfile.gettempdir()
-            music_path = f"{temp_dir}/background_music.mp3"
-            with open(music_path, 'wb') as f:
-                f.write(response.content)
-            return music_path
+        try:
+            headers = {'User-Agent': 'Mozilla/5.0'}
+            response = requests.get(music_url, headers=headers, timeout=30)
+            
+            if response.status_code == 200:
+                temp_dir = tempfile.gettempdir()
+                music_path = f"{temp_dir}/background_music.mp3"
+                with open(music_path, 'wb') as f:
+                    f.write(response.content)
+                print(f"✅ Music downloaded successfully")
+                return music_path
+            else:
+                print(f"⚠️ Music download failed (status {response.status_code}), generating silent audio...")
+                return self._generate_silent_audio()
+                
+        except Exception as e:
+            print(f"⚠️ Music download error: {e}, generating silent audio...")
+            return self._generate_silent_audio()
+    
+    def _generate_silent_audio(self) -> str:
+        """Generate silent audio as fallback if music download fails"""
+        temp_dir = tempfile.gettempdir()
+        silent_path = f"{temp_dir}/silent.mp3"
         
-        raise Exception("Failed to download music")
+        # Generate 60 seconds of silence using FFmpeg
+        cmd = [
+            'ffmpeg', '-y',
+            '-f', 'lavfi',
+            '-i', 'anullsrc=r=44100:cl=stereo',
+            '-t', '60',
+            '-q:a', '9',
+            '-acodec', 'libmp3lame',
+            silent_path
+        ]
+        
+        subprocess.run(cmd, check=True, capture_output=True)
+        print("✅ Silent audio generated as fallback")
+        return silent_path
     
     def _create_video_with_music(self, image_files: list, music_path: str, output_path: str, 
                                   duration_per_image: float, total_duration: int):
