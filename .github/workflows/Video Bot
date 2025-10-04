@@ -1,0 +1,32 @@
+name: Video Bot
+on:
+  schedule:
+    - cron: '0 9 * * *'   # 9 AM UTC
+    - cron: '0 15 * * *'  # 3 PM UTC  
+    - cron: '0 21 * * *'  # 9 PM UTC
+  workflow_dispatch:
+
+jobs:
+  generate_video:
+    runs-on: [self-hosted, gpu]  # Ensure your runner is labeled as `gpu`
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v2
+
+    - name: Set up Python environment
+      run: |
+        python -m venv venv
+        source venv/bin/activate
+        pip install --upgrade pip
+        pip install torch torchvision torchaudio diffusers transformers ffmpeg
+
+    - name: Generate video
+      run: |
+        python generate_video.py  # This file contains the video generation logic
+
+    - name: Upload generated video
+      uses: actions/upload-artifact@v2
+      with:
+        name: generated-video
+        path: /content/drive/MyDrive/generated_video.mp4  # Path where video is saved
