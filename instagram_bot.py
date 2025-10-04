@@ -160,16 +160,82 @@ class PostHistoryManager:
         except:
             return False
 
+class ImageGenerator:
+    """Handles image generation with multiple fallback options"""
+    
+    def generate_image(self, prompt: str, niche: str) -> str:
+        """
+        Try multiple image generation methods in order:
+        1. HuggingFace Inference API
+        2. Pollinations.ai (free, no API key)
+        """
+        
+        # Method 1: HuggingFace
+        try:
+            return self._generate_huggingface(prompt)
+        except Exception as e:
+            print(f"⚠️ HuggingFace failed: {e}")
+        
+        # Method 2: Pollinations.ai (Free, no limits)
+        try:
+            return self._generate_pollinations(prompt)
+        except Exception as e:
+            print(f"⚠️ Pollinations.ai failed: {e}")
 
+    def _generate_huggingface(self, image_prompt) -> str:
+        hf_token = os.getenv('HUGGINGFACE_TOKEN')
+        if not hf_token:
+            raise Exception("HUGGINGFACE_TOKEN environment variable is required")
+        
+        hf_headers = {"Authorization": f"Bearer {hf_token}"}
+        hf_url = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell"
+        
+        print(f"🎨 Generating {image_prompt} image with HuggingFace FLUX...")
+        response = requests.post(hf_url, headers=hf_headers, json={"inputs": image_prompt}, timeout=60)
+        
+        if response.status_code == 200:
+            base64_image = base64.b64encode(response.content).decode('utf-8')
+            print("✅ Image generated successfully")
+            return base64_image
+        else:
+            raise Exception(f"Image generation failed: {response.status_code} - {response.text}")
+
+    def _generate_pollinations(self, prompt: str) -> str:
+        """
+        Use Pollinations.ai - Free image generation, no API key needed
+        This is a reliable fallback option
+        """
+        print("🎨 Generating with Pollinations.ai (Free)...")
+        
+        from urllib.parse import quote
+        # URL-encode the prompt
+        encoded_prompt = quote(prompt)
+        
+        # Pollinations.ai free API - supports various models
+        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true&model=flux"
+        
+        try:
+            response = requests.get(image_url, timeout=60)
+            if response.status_code == 200:
+                base64_image = base64.b64encode(response.content).decode('utf-8')
+                print("✅ Generated with Pollinations.ai")
+                return base64_image
+            else:
+                raise Exception(f"Status code: {response.status_code}")
+        except Exception as e:
+            raise Exception(f"Pollinations.ai failed: {e}")
+    
+        
 class InstagramPostGenerator:
     def __init__(self, google_api_key: str):
         genai.configure(api_key=google_api_key)
         self.google_api_key = google_api_key
+        self.image_generator = ImageGenerator()
         self.search_templates = [
             "viral Instagram posts {niche} high engagement 2025 Current",
             "trending {niche} content Instagram getting most likes",
-            "popular Instagram {niche} aesthetics viral posts",
             "{season} Instagram trends {niche} viral content",
+            "popular Instagram {niche} aesthetics viral posts",
             "Instagram growth {niche} content formats trending"
         ]
     
@@ -192,7 +258,7 @@ class InstagramPostGenerator:
         - The original username
         - The original caption
         
-        The imageDescription should be detailed enough for AI image generation.
+        The imageDescription should be long and detailed enough for AI image generation.
         Return as valid JSON array with objects containing: id, username, caption, imageDescription fields.
         """
         
@@ -230,23 +296,28 @@ class InstagramPostGenerator:
     
     def generate_ready_post(self, inspiration: InspirationPost, niche: str) -> GeneratedPost:
         try:
-            image_prompt = f'High-quality, professional {niche} Instagram photo inspired by: "{inspiration.imageDescription}". Aesthetic, engaging, and optimized for social media.'
+            image_prompt = f'High-quality, professional {niche} Instagram photo inspired by: "{inspiration.imageDescription}". Aesthetic, engaging, and optimized for social media. Ultra-detailed, vibrant colors, professional photography.'
             
-            hf_token = os.getenv('HUGGINGFACE_TOKEN')
-            if not hf_token:
-                raise Exception("HUGGINGFACE_TOKEN environment variable is required")
+            # Use the new image generator with multiple fallbacks
+            print(f"🎨 Generating {niche} image...")
+            base64_image = self.image_generator.generate_image(image_prompt, niche)
+            print("✅ Image generated successfully")
             
-            hf_headers = {"Authorization": f"Bearer {hf_token}"}
-            hf_url = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell"
+            # hf_token = os.getenv('HUGGINGFACE_TOKEN')
+            # if not hf_token:
+            #     raise Exception("HUGGINGFACE_TOKEN environment variable is required")
             
-            print(f"🎨 Generating {niche} image with HuggingFace FLUX...")
-            response = requests.post(hf_url, headers=hf_headers, json={"inputs": image_prompt}, timeout=60)
+            # hf_headers = {"Authorization": f"Bearer {hf_token}"}
+            # hf_url = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell"
             
-            if response.status_code == 200:
-                base64_image = base64.b64encode(response.content).decode('utf-8')
-                print("✅ Image generated successfully")
-            else:
-                raise Exception(f"Image generation failed: {response.status_code} - {response.text}")
+            # print(f"🎨 Generating {niche} image with HuggingFace FLUX...")
+            # response = requests.post(hf_url, headers=hf_headers, json={"inputs": image_prompt}, timeout=60)
+            
+            # if response.status_code == 200:
+            #     base64_image = base64.b64encode(response.content).decode('utf-8')
+            #     print("✅ Image generated successfully")
+            # else:
+            #     raise Exception(f"Image generation failed: {response.status_code} - {response.text}")
             
             text_model = genai.GenerativeModel('gemini-2.0-flash-exp')
             
