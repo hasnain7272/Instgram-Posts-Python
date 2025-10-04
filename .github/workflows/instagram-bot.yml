@@ -17,7 +17,7 @@ jobs:
           python-version: '3.11'
       
       - name: Install dependencies
-        run: pip install google-generativeai replicate requests pillow
+        run: pip install google-generativeai replicate requests pillow google-genai
       
       - name: Run Instagram Bot
         run: python instagram_bot.py
