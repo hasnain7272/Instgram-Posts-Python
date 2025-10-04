@@ -7,21 +7,22 @@ from datetime import datetime
 import google.generativeai as genai
 import subprocess
 import tempfile
-import json
-
+import js
 class ReelGenerator:
     def __init__(self, google_api_key: str):
         genai.configure(api_key=google_api_key)
         
-    def generate_reel(self, niche: str, num_images: int = 20):
-        """Generate Instagram Reel from multiple AI images"""
-        print(f"🎬 Generating {num_images}-image reel for {niche}...")
+    def generate_reel(self, niche: str, num_images: int = 20, duration: int = 15):
+        """Generate Instagram Reel from multiple AI images with music"""
+        print(f"🎬 Generating {num_images}-image reel for {niche} ({duration}s)...")
         
         # 1. Generate image prompts
         prompts = self._generate_image_prompts(niche, num_images)
-        print("Images prompts are as follows.....", prompts)
         
-        # 2. Generate all images
+        # 2. Download background music
+        music_path = self._download_music(niche)
+        
+        # 3. Generate all images
         image_files = []
         temp_dir = tempfile.mkdtemp()
         
@@ -29,23 +30,23 @@ class ReelGenerator:
             print(f"🎨 Generating image {i+1}/{num_images}...")
             image_data = self._generate_image(prompt)
             
-            # Save temporarily
             img_path = f"{temp_dir}/img_{i:03d}.jpg"
             with open(img_path, 'wb') as f:
                 f.write(base64.b64decode(image_data))
             image_files.append(img_path)
             
-            time.sleep(0.5)  # Avoid rate limits
+            time.sleep(0.5)
         
-        # 3. Create video with transitions
+        # 4. Create video with music
         video_path = f"{temp_dir}/reel.mp4"
-        self._create_video(image_files, video_path, duration_per_image=0.8)
+        duration_per_image = duration / num_images
+        self._create_video_with_music(image_files, music_path, video_path, duration_per_image, duration)
         
-        # 4. Read video as base64
+        # 5. Read video as base64
         with open(video_path, 'rb') as f:
             video_base64 = base64.b64encode(f.read()).decode()
         
-        # 5. Generate caption
+        # 6. Generate caption
         caption_data = self._generate_caption(niche)
         
         print("✅ Reel generated successfully!")
@@ -89,29 +90,67 @@ class ReelGenerator:
             return base64.b64encode(response.content).decode()
         raise Exception(f"Image generation failed: {response.status_code}")
     
-    def _create_video(self, image_files: list, output_path: str, duration_per_image: float = 0.8):
-        """Create video from images with Ken Burns effect"""
+    def _download_music(self, niche: str) -> str:
+        """Download royalty-free music based on niche"""
+        
+        # Music mapping by niche (royalty-free sources)
+        music_urls = {
+            'travel': 'https://cdn.pixabay.com/download/audio/2022/03/10/audio_4c3a8b0a91.mp3',  # Upbeat Travel
+            'food': 'https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3',  # Cooking
+            'fitness': 'https://cdn.pixabay.com/download/audio/2022/03/24/audio_1e87a94317.mp3',  # Energetic
+            'motivation': 'https://cdn.pixabay.com/download/audio/2022/05/27/audio_d0e4d42c6e.mp3',  # Inspiring
+            'lifestyle': 'https://cdn.pixabay.com/download/audio/2022/03/15/audio_51e9045c43.mp3',  # Chill
+            'aesthetic': 'https://cdn.pixabay.com/download/audio/2022/08/02/audio_4dcc0c2e8c.mp3',  # Ambient
+            'fashion': 'https://cdn.pixabay.com/download/audio/2022/11/22/audio_ecbd4e2c93.mp3',  # Trendy
+            'tech': 'https://cdn.pixabay.com/download/audio/2022/05/27/audio_595d49853a.mp3',  # Electronic
+            'nature': 'https://cdn.pixabay.com/download/audio/2022/03/10/audio_8956e99b09.mp3',  # Peaceful
+        }
+        
+        # Default music if niche not found
+        music_url = music_urls.get(niche.lower(), music_urls['lifestyle'])
+        
+        print(f"🎵 Downloading {niche} music...")
+        response = requests.get(music_url, timeout=30)
+        
+        if response.status_code == 200:
+            temp_dir = tempfile.gettempdir()
+            music_path = f"{temp_dir}/background_music.mp3"
+            with open(music_path, 'wb') as f:
+                f.write(response.content)
+            return music_path
+        
+        raise Exception("Failed to download music")
+    
+    def _create_video_with_music(self, image_files: list, music_path: str, output_path: str, 
+                                  duration_per_image: float, total_duration: int):
+        """Create video from images with Ken Burns effect and background music"""
+        
+        temp_dir = os.path.dirname(image_files[0])
         
         # Create concat file for FFmpeg
-        concat_file = f"{os.path.dirname(image_files[0])}/concat.txt"
+        concat_file = f"{temp_dir}/concat.txt"
         with open(concat_file, 'w') as f:
             for img in image_files:
                 f.write(f"file '{img}'\n")
                 f.write(f"duration {duration_per_image}\n")
-            # Last image needs to be repeated
             f.write(f"file '{image_files[-1]}'\n")
         
-        # FFmpeg command with zoom/pan effects
+        # FFmpeg command with zoom/pan effects and music
         cmd = [
             'ffmpeg', '-y',
             '-f', 'concat',
             '-safe', '0',
             '-i', concat_file,
-            '-vf', 'zoompan=z=\'min(zoom+0.0015,1.5)\':d=25*0.8:x=\'iw/2-(iw/zoom/2)\':y=\'ih/2-(ih/zoom/2)\':s=1080x1920,format=yuv420p',
+            '-i', music_path,
+            '-vf', f"zoompan=z='min(zoom+0.0015,1.5)':d=25*{duration_per_image}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920,format=yuv420p",
             '-c:v', 'libx264',
             '-preset', 'fast',
             '-crf', '23',
             '-r', '25',
+            '-c:a', 'aac',
+            '-b:a', '192k',
+            '-shortest',
+            '-t', str(total_duration),
             output_path
         ]
         
@@ -156,7 +195,6 @@ class CloudinaryVideoUploader:
             'upload_preset': upload_preset,
         }
         
-        # Generate signature
         filtered = {k: v for k, v in params.items() if k not in {'file', 'cloud_name', 'resource_type', 'api_key'}}
         sorted_params = sorted(filtered.items())
         string_to_sign = '&'.join(f"{k}={v}" for k, v in sorted_params) + api_secret
@@ -191,7 +229,6 @@ class InstagramReelPublisher:
                      video_url: str, caption: str) -> str:
         """Publish Reel to Instagram"""
         
-        # Create video container
         create_url = f"{self.base_url}/{account_id}/media"
         create_params = {
             'media_type': 'REELS',
@@ -211,7 +248,6 @@ class InstagramReelPublisher:
         container_id = data['id']
         print(f"✅ Container created: {container_id}")
         
-        # Wait for video processing
         print("⏳ Processing video...")
         max_retries = 30
         for i in range(max_retries):
@@ -231,7 +267,6 @@ class InstagramReelPublisher:
             
             time.sleep(5)
         
-        # Publish
         print("🚀 Publishing Reel...")
         publish_url = f"{self.base_url}/{account_id}/media_publish"
         publish_params = {'creation_id': container_id, 'access_token': access_token}
@@ -247,10 +282,9 @@ class InstagramReelPublisher:
 
 
 def main():
-    print("🎬 Instagram Reel Generator")
+    print("🎬 Instagram Reel Generator with Music")
     print("=" * 50)
     
-    # Get environment variables
     google_api_key = os.getenv('GOOGLE_API_KEY')
     cloudinary_cloud_name = os.getenv('CLOUDINARY_CLOUD_NAME')
     cloudinary_upload_preset = os.getenv('CLOUDINARY_UPLOAD_PRESET')
@@ -259,7 +293,6 @@ def main():
     instagram_account_id = os.getenv('INSTAGRAM_ACCOUNT_ID')
     instagram_access_token = os.getenv('INSTAGRAM_ACCESS_TOKEN')
     
-    # Check required vars
     required = {
         'GOOGLE_API_KEY': google_api_key,
         'CLOUDINARY_CLOUD_NAME': cloudinary_cloud_name,
@@ -277,16 +310,18 @@ def main():
     
     try:
         # Configuration
-        niche = os.getenv('REEL_NICHE', 'travel')  # Default to travel
-        num_images = int(os.getenv('REEL_IMAGES', '20'))  # Default 20 images
+        niche = os.getenv('REEL_NICHE', 'travel')
+        num_images = int(os.getenv('REEL_IMAGES', '20'))
+        duration = int(os.getenv('REEL_DURATION', '15'))  # Total video duration in seconds
         
         print(f"🎯 Niche: {niche}")
         print(f"📸 Images: {num_images}")
+        print(f"⏱️ Duration: {duration} seconds")
         print("=" * 50)
         
         # Generate reel
         generator = ReelGenerator(google_api_key)
-        reel_data = generator.generate_reel(niche, num_images)
+        reel_data = generator.generate_reel(niche, num_images, duration)
         
         # Upload to Cloudinary
         uploader = CloudinaryVideoUploader()
