@@ -19,6 +19,7 @@ class ReelGenerator:
         
         # 1. Generate image prompts
         prompts = self._generate_image_prompts(niche, num_images)
+        print("Images prompts are as follows.....", prompts)
         
         # 2. Generate all images
         image_files = []
