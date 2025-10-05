@@ -19,6 +19,7 @@ class ReelGenerator:
         
         # 1. Generate image prompts
         prompts = self._generate_image_prompts(niche, num_images)
+        print("prompts.........", prompts)
         
         # 2. Download background music
         music_path = self._download_music(niche)
