@@ -88,15 +88,15 @@ class ReelGenerator:
         
         # Try multiple times with different approaches
         attempts = [
-            f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=true&model=flux",
             f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&seed=105&nologo=true&model=nanobanana",
+            f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=true&model=flux",
             f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=true",
             f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920"
         ]
         
         for i, url in enumerate(attempts):
             try:
-                response = requests.get(url, timeout=60)
+                response = requests.get(url, timeout=160)
                 if response.status_code == 200:
                     return base64.b64encode(response.content).decode()
                 print(f"⚠️ Attempt {i+1} failed: {response.status_code}")
