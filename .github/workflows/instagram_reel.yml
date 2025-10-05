@@ -10,7 +10,7 @@ on:
       niche:
         description: 'Reel niche (travel, food, fitness, etc.)'
         required: false
-        default: 'food'
+        default: 'fitness'
       num_images:
         description: 'Number of images in reel'
         required: false
@@ -18,7 +18,7 @@ on:
       duration:
         description: 'Total video duration in seconds (10-90)'
         required: false
-        default: '15'
+        default: '10'
 
 jobs:
   post:
