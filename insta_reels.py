@@ -89,6 +89,7 @@ class ReelGenerator:
         # Try multiple times with different approaches
         attempts = [
             f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=true&model=flux",
+            f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&seed=105&nologo=true&model=nanobanana",
             f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=true",
             f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920"
         ]
