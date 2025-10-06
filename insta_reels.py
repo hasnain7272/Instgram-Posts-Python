@@ -210,6 +210,7 @@ f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&seed=105
         
         prompt = f"""Create viral Instagram Reel caption for {niche} content.
         Keep it short, punchy, and engaging.
+and 20 hashtags also.
         
         Return as JSON:
         {{
