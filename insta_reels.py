@@ -64,7 +64,8 @@ class ReelGenerator:
         
         prompt = f"""Generate {count} diverse, visually stunning image prompts for {niche} Instagram content in 2025 current.
         Each prompt should be different but cohesive and synchronize for a slideshow reel.
-        Make each of them ultra-detailed for AI image generation.
+
+        Make each of them ultra-detailed for AI image generation.Only real image possible details.
         
         Return as JSON array of strings:
         ["prompt 1 here...", "prompt 2 here...", ...]
