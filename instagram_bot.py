@@ -145,7 +145,7 @@ class PostHistoryManager:
     
     def get_next_niche(self, history: List[PostMetadata]) -> str:
         niches = ['fitness', 'motivation', 'food', 'travel', 'lifestyle', 'aesthetic', 'fashion', 'tech', 'hot Sensual indulgence']
-        recent_niches = [p.engagement_niche for p in history[-5:]]
+        recent_niches = [p.engagement_niche for p in history[-8:]]
         
         for niche in niches:
             if niche not in recent_niches:
@@ -328,7 +328,7 @@ class InstagramPostGenerator:
             
             Generate:
             1. A catchy caption (max 100 characters) that drives engagement
-            2. 7 trending hashtags for {niche} content
+            2. 20 trending hashtags for {niche} content
             
             Make it original and optimized for maximum likes and comments.
             
