@@ -99,7 +99,7 @@ f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=t
         
         for i, url in enumerate(attempts):
             try:
-                response = requests.get(url, timeout=160)
+                response = requests.get(url, timeout=260)
                 if response.status_code == 200:
                     return base64.b64encode(response.content).decode()
                 print(f"⚠️ Attempt {i+1} failed: {response.status_code}")
@@ -107,7 +107,7 @@ f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=t
                 print(f"⚠️ Attempt {i+1} error: {e}")
             
             if i < len(attempts) - 1:
-                time.sleep(2)  # Wait before retry
+                time.sleep(20)  # Wait before retry
         
         raise Exception(f"All image generation attempts failed")
     
