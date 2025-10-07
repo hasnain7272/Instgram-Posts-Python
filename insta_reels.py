@@ -92,7 +92,7 @@ f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=t
             
             f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=true&model=flux",
 
-f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=true&model=turbo,
+f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=true&model=turbo",
             f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=true",
             f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920"
         ]
