@@ -65,7 +65,7 @@ class ReelGenerator:
         prompt = f"""Generate {count} diverse, visually stunning image prompts for {niche} Instagram content in 2025 current.
         Each prompt should be different but cohesive and synchronize for a slideshow reel.
 
-        Make each of them ultra-detailed for AI image generation.Only real image possible details.
+        Make each of them ultra-detailed for AI image generation.Only realistic image possible details.
         
         Return as JSON array of strings:
         ["prompt 1 here...", "prompt 2 here...", ...]
@@ -88,10 +88,7 @@ class ReelGenerator:
         encoded = quote(enhanced_prompt)
         
         # Try multiple times with different approaches
-        attempts = [
-f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=true&model=nanobanana",
-            
-            f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=true&model=flux",
+        attempts = [ f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=true&model=flux",
 
 f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=true&model=turbo",
             f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=true",
