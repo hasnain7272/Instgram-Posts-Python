@@ -358,7 +358,7 @@ def main():
     
     try:
         # Configuration
-        niche = os.getenv('REEL_NICHE', 'food fitness')
+        niche = os.getenv('REEL_NICHE', 'Womens Motivation, Mens Thoughness')
         num_images = int(os.getenv('REEL_IMAGES', '20'))
         duration = int(os.getenv('REEL_DURATION', '15'))  # Total video duration in seconds
         
