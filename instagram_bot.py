@@ -265,6 +265,8 @@ class InstagramPostGenerator:
         try:
             model = genai.GenerativeModel('gemini-2.0-flash-exp')
             response = model.generate_content(prompt)
+
+time.sleep(20)
             
             json_string = response.text.strip()
             
