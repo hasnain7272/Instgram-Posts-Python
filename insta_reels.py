@@ -17,8 +17,9 @@ class ReelGenerator:
         """Generate Instagram Reel from multiple AI images with music"""
         print(f"🎬 Generating {num_images}-image reel for {niche} ({duration}s)...")
         
-        # 1. Generate image prompts
-        prompts = self._generate_image_prompts(niche, num_images)
+        # 1. Generate prompts AND caption in ONE API call
+        content_data = self._generate_prompts_and_caption(niche, num_images)
+        prompts = content_data['prompts']
         print("prompts.........", prompts)
         
         # 2. Download background music
@@ -48,39 +49,50 @@ class ReelGenerator:
         with open(video_path, 'rb') as f:
             video_base64 = base64.b64encode(f.read()).decode()
         
-        # 6. Generate caption
-        caption_data = self._generate_caption(niche)
-        
         print("✅ Reel generated successfully!")
         return {
             'video_base64': video_base64,
-            'caption': caption_data['caption'],
-            'hashtags': caption_data['hashtags']
+            'caption': content_data['caption'],
+            'hashtags': content_data['hashtags']
         }
     
-    def _generate_image_prompts(self, niche: str, count: int) -> list:
-        """Generate diverse prompts for the niche"""
+    def _generate_prompts_and_caption(self, niche: str, count: int) -> dict:
+        """Generate image prompts AND caption in a single API call"""
         model = genai.GenerativeModel('gemini-2.0-flash-exp')
         
-        prompt = f"""Generate {count} diverse, visually stunning image prompts for {niche} Instagram content in 2025 current.
-        Each prompt should be different but cohesive and synchronize for a slideshow reel.
+        prompt = f"""Generate content for a {niche} Instagram Reel with {count} images.
 
-        Make each of them ultra-detailed for AI image generation.Only realistic image possible details.
-        
-        Return as JSON array of strings:
-        ["prompt 1 here...", "prompt 2 here...", ...]
-        """
+1. Create {count} diverse, visually stunning image prompts for {niche} Instagram content in 2025.
+   - Each prompt should be different but cohesive and synchronized for a slideshow reel
+   - Make each ultra-detailed for AI image generation with only realistic details
+
+2. Create a viral Instagram Reel caption for {niche} content
+   - Keep it short, punchy, and engaging
+   - Include 20 relevant hashtags
+
+Return ONLY valid JSON in this exact format:
+{{
+    "prompts": ["prompt 1 here...", "prompt 2 here...", ...],
+    "caption": "short caption here",
+    "hashtags": ["#tag1", "#tag2", "#tag3", ..., "#reels", "#viral"]
+}}
+"""
         
         response = model.generate_content(prompt)
         json_str = response.text.strip()
         
+        # Extract JSON from markdown code blocks if present
         if '```json' in json_str:
             json_str = json_str.split('```json')[1].split('```')[0].strip()
-        elif '[' in json_str:
-            json_str = json_str[json_str.find('['):json_str.rfind(']')+1]
+        elif '{' in json_str:
+            json_str = json_str[json_str.find('{'):json_str.rfind('}')+1]
         
-        prompts = json.loads(json_str)
-        return prompts[:count]
+        data = json.loads(json_str)
+        return {
+            'prompts': data['prompts'][:count],
+            'caption': data['caption'],
+            'hashtags': data['hashtags']
+        }
     
     def _generate_image(self, prompt: str) -> str:
         """Generate single image with retry logic"""
@@ -88,9 +100,9 @@ class ReelGenerator:
         encoded = quote(enhanced_prompt)
         
         # Try multiple times with different approaches
-        attempts = [ f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=true&model=flux",
-
-f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=true&model=turbo",
+        attempts = [
+            f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=true&model=flux",
+            f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=true&model=turbo",
             f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=true",
             f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920"
         ]
@@ -202,31 +214,6 @@ f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=t
         ]
         
         subprocess.run(cmd, check=True, capture_output=True)
-    
-    def _generate_caption(self, niche: str) -> dict:
-        """Generate engaging caption and hashtags"""
-        model = genai.GenerativeModel('gemini-2.0-flash-exp')
-        
-        prompt = f"""Create viral Instagram Reel caption for {niche} content.
-        Keep it short, punchy, and engaging.
-and 20 hashtags also.
-        
-        Return as JSON:
-        {{
-            "caption": "short caption here",
-            "hashtags": ["#tag1", "#tag2", "#tag3", "#tag4", "#tag5", "#reels", "#viral"]
-        }}
-        """
-        
-        response = model.generate_content(prompt)
-        json_str = response.text.strip()
-        
-        if '```json' in json_str:
-            json_str = json_str.split('```json')[1].split('```')[0].strip()
-        elif '{' in json_str:
-            json_str = json_str[json_str.find('{'):json_str.rfind('}')+1]
-        
-        return json.loads(json_str)
 
 
 class CloudinaryVideoUploader:
