@@ -10,7 +10,7 @@ import tempfile
 import json
 import random
 
-class EnhancedReelGenerator:
+class TrulyAIReelGenerator:
     def __init__(self, google_api_key: str = None, openai_api_key: str = None):
         self.google_api_key = google_api_key
         self.openai_api_key = openai_api_key
@@ -18,17 +18,7 @@ class EnhancedReelGenerator:
         if google_api_key:
             genai.configure(api_key=google_api_key)
 
-        # Fallback defaults
-        self.default_style = {
-            'font': 'Sans-Serif',
-            'font_size': 60,
-            'color': '#FFFFFF',
-            'position': 'center',
-            'transitions': ['fade', 'slideleft', 'slideright'],
-            'mood': 'energetic'
-        }
-
-        # Expanded music library organized by mood
+        # Music library organized by mood
         self.music_library = {
             'energetic': [
                 'https://www.bensound.com/bensound-music/bensound-energy.mp3',
@@ -53,8 +43,8 @@ class EnhancedReelGenerator:
         }
 
     def generate_reel(self, niche: str, num_images: int = 20, duration: int = 15):
-        """Generate enhanced Instagram Reel with AI-driven styling"""
-        print(f"🎬 Generating enhanced {num_images}-image reel for {niche} ({duration}s)...")
+        """Generate truly AI-driven Instagram Reel"""
+        print(f"🎬 Generating AI-controlled {num_images}-image reel for {niche} ({duration}s)...")
 
         # Use persistent temp directory for checkpointing
         base_temp = tempfile.gettempdir()
@@ -66,108 +56,102 @@ class EnhancedReelGenerator:
 
         # Check for existing checkpoint
         if os.path.exists(checkpoint_file):
-            print("📦 Found checkpoint, resuming from saved progress...")
+            print("📦 Resuming from checkpoint...")
             with open(checkpoint_file, 'r') as f:
                 content_data = json.load(f)
         else:
-            # 1. Single AI call for everything
-            content_data = self._generate_complete_content(niche, num_images)
-            # Save checkpoint
+            content_data = self._generate_ai_complete_package(niche, num_images, duration)
             with open(checkpoint_file, 'w') as f:
                 json.dump(content_data, f)
-            print("✅ AI Content generated & checkpointed")
+            print("✅ AI package generated & checkpointed")
 
-        print(f"🎨 Style: AI-driven per image")
         print(f"🎵 Mood: {content_data['mood']}")
+        print(f"🎬 Transitions: AI-controlled per clip")
 
-        # 2. Sort images by hook score (highest first)
-        sorted_prompts = self._sort_by_hook_score(content_data['prompts'])
-        print(f"🎯 Hook-first sequencing applied")
+        # Sort by hook score
+        sorted_clips = sorted(content_data['clips'], key=lambda x: x['hook_score'], reverse=True)
 
-        # 3. Download smart music
-        music_path = self._download_smart_music(content_data['mood'])
+        # Download music
+        music_path = self._download_music(content_data['mood'])
 
-        # 4. Generate all images
+        # Generate images
         image_files = []
-
-        for i, prompt_data in enumerate(sorted_prompts):
+        for i, clip in enumerate(sorted_clips):
             img_path = f"{temp_dir}/img_{i:03d}.jpg"
 
-            # Skip if image already exists
             if os.path.exists(img_path):
-                print(f"✓ Image {i+1}/{num_images} already exists, skipping...")
+                print(f"✓ Image {i+1}/{num_images} exists")
                 image_files.append(img_path)
                 continue
 
             print(f"🎨 Generating image {i+1}/{num_images}...")
-            image_data = self._generate_image(prompt_data['prompt'])
+            image_data = self._generate_image(clip['prompt'])
 
             with open(img_path, 'wb') as f:
                 f.write(base64.b64decode(image_data))
             image_files.append(img_path)
-
             time.sleep(0.5)
 
-        # 5. Create enhanced video with text overlays and dynamic transitions
+        # Create AI-controlled video
         video_path = f"{temp_dir}/reel.mp4"
-        duration_per_image = duration / num_images
-        self._create_enhanced_video(
+        duration_per_clip = duration / num_images
+        self._create_ai_driven_video(
             image_files,
+            sorted_clips,
             music_path,
             video_path,
-            duration_per_image,
-            duration,
-            content_data['text_designs']
+            duration_per_clip,
+            duration
         )
 
-        # 6. Read video as base64
+        # Read video
         with open(video_path, 'rb') as f:
             video_base64 = base64.b64encode(f.read()).decode()
 
-        print("✅ Enhanced Reel generated successfully!")
+        print("✅ AI-driven Reel complete!")
         return {
             'video_base64': video_base64,
             'caption': content_data['caption'],
             'hashtags': content_data['hashtags']
         }
 
-    def _generate_complete_content(self, niche: str, count: int) -> dict:
-        """Single AI call for ALL content decisions with Gemini/OpenAI fallback"""
+    def _generate_ai_complete_package(self, niche: str, count: int, duration: int) -> dict:
+        """AI generates complete video package with FFmpeg-ready instructions"""
         
-        prompt = f"""You are a professional Instagram content creator. Generate COMPLETE content package for a {niche} Instagram Reel with {count} images.
+        prompt = f"""You are a professional video editor and Instagram content creator. Design a complete {duration}-second Reel with {count} clips for the niche: {niche}.
 
-IMPORTANT: Return ONLY valid JSON, no markdown, no explanations.
+For EACH clip, provide detailed FFmpeg-compatible specifications:
 
-Generate:
-1. {count} diverse, ultra-detailed image prompts (realistic, cohesive for slideshow/Reel)
-2. Each prompt gets a hook_score (1-10) rating its visual impact/attention-grabbing power
-3. For EACH image, generate text overlay with its own style settings:
-   - text: 2-4 simple words (no special characters)
-   - position: top/center/bottom (based on image content)
-   - font_size: 40-60 (readable size)
-   - box: true/false (whether to add background box)
-   - color: #FFFFFF or #FFD700 or #FF0000 (contrasting with image)
-4. Viral catchy caption + 20 hashtags
-5. Overall mood for music selection
+1. Image prompt (detailed, realistic)
+2. hook_score (1-10)
+3. text_overlay with ONLY alphanumeric characters (2-4 words, NO special chars)
+4. text_position: "top" | "center" | "bottom"
+5. text_color: "white" | "yellow" | "red" | "cyan" (simple color names)
+6. text_size: 40-60 (px)
+7. text_style: "plain" | "box" | "shadow"
+8. zoom_effect: "zoom_in" | "zoom_out" | "pan_left" | "pan_right" | "static"
+9. transition: "fade" | "slide" | "dissolve" (for entering this clip)
 
-CRITICAL TEXT RULES:
-- Simple words only (no punctuation)
-- Position should complement the image subject
-- Use box=true for busy backgrounds, box=false for clean backgrounds
-- Vary the designs across images for visual interest
+Design each clip uniquely - vary positions, colors, zoom effects, and transitions for visual interest.
 
-Return this EXACT JSON structure:
+Return ONLY this JSON (no markdown):
 {{
-    "prompts": [
-        {{"prompt": "detailed prompt here...", "hook_score": 8}}
-    ],
-    "text_designs": [
-        {{"text": "Push Harder", "position": "top", "font_size": 50, "box": true, "color": "#FFFFFF"}},
-        {{"text": "Never Quit", "position": "bottom", "font_size": 55, "box": false, "color": "#FFD700"}}
-    ],
-    "caption": "viral caption here",
-    "hashtags": ["#tag1", "#tag2", ..., "#reels", "#viral"],
-    "mood": "energetic or calm or upbeat or intense or chill"
+  "clips": [
+    {{
+      "prompt": "professional stock market trading floor...",
+      "hook_score": 9,
+      "text_overlay": "Bull Market",
+      "text_position": "top",
+      "text_color": "yellow",
+      "text_size": 55,
+      "text_style": "box",
+      "zoom_effect": "zoom_in",
+      "transition": "fade"
+    }}
+  ],
+  "caption": "viral caption",
+  "hashtags": ["#tag1", "#tag2", "#reels", "#viral"],
+  "mood": "upbeat"
 }}
 """
 
@@ -176,18 +160,18 @@ Return this EXACT JSON structure:
         # Try Gemini first
         if self.google_api_key:
             try:
-                print("🤖 Using Gemini API...")
+                print("🤖 AI designing video package...")
                 model = genai.GenerativeModel('gemini-2.0-flash-exp')
                 response = model.generate_content(prompt)
                 json_str = response.text.strip()
-                print("✅ Gemini response received")
+                print("✅ AI design complete")
             except Exception as e:
                 print(f"⚠️ Gemini failed: {str(e)[:100]}")
 
-        # Fallback to OpenAI if Gemini failed
+        # Fallback to OpenAI
         if (not json_str or len(json_str) < 50) and self.openai_api_key:
             try:
-                print("🔄 Switching to OpenAI fallback...")
+                print("🔄 Using OpenAI...")
                 response = requests.post(
                     'https://api.openai.com/v1/chat/completions',
                     headers={
@@ -197,35 +181,30 @@ Return this EXACT JSON structure:
                     json={
                         'model': 'gpt-4o-mini',
                         'messages': [
-                            {'role': 'system', 'content': 'You are a professional Instagram content creator. Return only valid JSON.'},
+                            {'role': 'system', 'content': 'You are a video editor. Return only valid JSON.'},
                             {'role': 'user', 'content': prompt}
                         ],
-                        'temperature': 0.8,
-                        'max_tokens': 2000
+                        'temperature': 0.9,
+                        'max_tokens': 3000
                     },
                     timeout=30
                 )
                 
                 if response.status_code == 200:
-                    data = response.json()
-                    json_str = data['choices'][0]['message']['content'].strip()
-                    print("✅ OpenAI response received")
-                else:
-                    print(f"⚠️ OpenAI failed: {response.status_code}")
+                    json_str = response.json()['choices'][0]['message']['content'].strip()
+                    print("✅ OpenAI design complete")
                     
             except Exception as e:
-                print(f"⚠️ OpenAI also failed: {str(e)[:100]}")
+                print(f"⚠️ OpenAI failed: {str(e)[:100]}")
 
-        # Parse response
-        if not json_str or len(json_str) < 50:
-            print("⚠️ No valid AI response, using fallback defaults")
-            return self._get_fallback_content(niche, count)
+        if not json_str:
+            raise Exception("AI generation failed")
 
-        return self._parse_ai_response(json_str, niche, count)
+        return self._parse_and_validate(json_str, niche, count)
 
-    def _parse_ai_response(self, json_str: str, niche: str, count: int) -> dict:
-        """Parse AI response and apply fallbacks"""
-        # Extract JSON from markdown code blocks
+    def _parse_and_validate(self, json_str: str, niche: str, count: int) -> dict:
+        """Parse and ensure AI output is FFmpeg-compatible"""
+        # Extract JSON
         if '```json' in json_str:
             json_str = json_str.split('```json')[1].split('```')[0].strip()
         elif '```' in json_str:
@@ -236,297 +215,255 @@ Return this EXACT JSON structure:
         try:
             data = json.loads(json_str)
 
-            # Validate mood (for music)
-            if 'mood' not in data:
-                data['mood'] = 'energetic'
+            # Validate and sanitize each clip
+            if 'clips' in data and len(data['clips']) >= count:
+                for clip in data['clips'][:count]:
+                    # Clean text (CRITICAL)
+                    clip['text_overlay'] = ''.join(c for c in clip.get('text_overlay', 'Text') if c.isalnum() or c.isspace()).strip()[:25]
+                    
+                    # Validate enums
+                    if clip.get('text_position') not in ['top', 'center', 'bottom']:
+                        clip['text_position'] = 'center'
+                    if clip.get('text_color') not in ['white', 'yellow', 'red', 'cyan', 'green']:
+                        clip['text_color'] = 'white'
+                    if clip.get('text_style') not in ['plain', 'box', 'shadow']:
+                        clip['text_style'] = 'box'
+                    if clip.get('zoom_effect') not in ['zoom_in', 'zoom_out', 'pan_left', 'pan_right', 'static']:
+                        clip['zoom_effect'] = 'zoom_in'
+                    if clip.get('transition') not in ['fade', 'slide', 'dissolve']:
+                        clip['transition'] = 'fade'
+                    
+                    # Clamp text size
+                    clip['text_size'] = max(35, min(int(clip.get('text_size', 50)), 60))
+                    clip['hook_score'] = clip.get('hook_score', 5)
 
-            # Ensure text_designs exist and are valid
-            if 'text_designs' not in data or len(data['text_designs']) < count:
-                print("⚠️ AI didn't provide text_designs, using defaults")
-                data['text_designs'] = [
-                    {
-                        'text': f'Moment {i+1}',
-                        'position': 'center',
-                        'font_size': 50,
-                        'box': True,
-                        'color': '#FFFFFF'
-                    } for i in range(count)
-                ]
+                data['clips'] = data['clips'][:count]
             else:
-                # Sanitize each text design
-                for i, design in enumerate(data['text_designs'][:count]):
-                    # Clean text
-                    design['text'] = ''.join(c for c in design.get('text', f'Text {i+1}') if c.isalnum() or c.isspace())[:30]
-                    # Validate position
-                    design['position'] = design.get('position', 'center')
-                    if design['position'] not in ['top', 'center', 'bottom']:
-                        design['position'] = 'center'
-                    # Clamp font size
-                    design['font_size'] = max(35, min(int(design.get('font_size', 50)), 60))
-                    # Ensure box is boolean
-                    design['box'] = bool(design.get('box', True))
-                    # Validate color
-                    color = design.get('color', '#FFFFFF')
-                    if not color.startswith('#'):
-                        color = '#FFFFFF'
-                    design['color'] = color
+                raise ValueError("Invalid clips structure")
 
-            # Ensure prompts exist
-            if 'prompts' not in data or len(data['prompts']) < count:
-                data['prompts'] = [{'prompt': f'Beautiful {niche} scene {i+1}, professional photography', 'hook_score': 5} for i in range(count)]
-
+            data['mood'] = data.get('mood', 'upbeat')
             return data
 
-        except json.JSONDecodeError as e:
-            print(f"⚠️ JSON parsing failed: {e}")
-            return self._get_fallback_content(niche, count)
+        except Exception as e:
+            print(f"⚠️ Parse error: {e}, using minimal fallback")
+            # Absolute minimal fallback
+            return {
+                'clips': [{
+                    'prompt': f'{niche} professional scene {i+1}',
+                    'hook_score': 5,
+                    'text_overlay': f'Scene {i+1}',
+                    'text_position': 'center',
+                    'text_color': 'white',
+                    'text_size': 50,
+                    'text_style': 'plain',
+                    'zoom_effect': 'zoom_in' if i % 2 == 0 else 'zoom_out',
+                    'transition': 'fade'
+                } for i in range(count)],
+                'caption': f'Amazing {niche} content',
+                'hashtags': ['#reels', '#viral'],
+                'mood': 'upbeat'
+            }
 
-    def _get_fallback_content(self, niche: str, count: int) -> dict:
-        """Return safe fallback content structure"""
-        return {
-            'prompts': [{'prompt': f'Beautiful {niche} scene {i+1}, professional photography, high quality', 'hook_score': 5} for i in range(count)],
-            'text_designs': [
-                {
-                    'text': f'Moment {i+1}',
-                    'position': 'center',
-                    'font_size': 50,
-                    'box': True,
-                    'color': '#FFFFFF'
-                } for i in range(count)
-            ],
-            'caption': f'Amazing {niche} content! 🔥',
-            'hashtags': ['#reels', '#viral', '#instagram', '#explore', '#trending'],
-            'mood': 'energetic'
-        }
-
-    def _sort_by_hook_score(self, prompts: list) -> list:
-        """Sort prompts by hook_score (highest first)"""
-        return sorted(prompts, key=lambda x: x.get('hook_score', 5), reverse=True)
-
-    def _download_smart_music(self, mood: str) -> str:
-        """Download music based on AI-detected mood"""
-        mood = mood.lower()
-        music_urls = self.music_library.get(mood, self.music_library['energetic'])
+    def _download_music(self, mood: str) -> str:
+        """Download music"""
+        music_urls = self.music_library.get(mood.lower(), self.music_library['upbeat'])
         music_url = random.choice(music_urls)
 
-        print(f"🎵 Downloading {mood} music...")
-
         try:
-            headers = {'User-Agent': 'Mozilla/5.0'}
-            response = requests.get(music_url, headers=headers, timeout=30)
-
+            response = requests.get(music_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=30)
             if response.status_code == 200:
-                temp_dir = tempfile.gettempdir()
-                music_path = f"{temp_dir}/background_music.mp3"
+                music_path = f"{tempfile.gettempdir()}/music.mp3"
                 with open(music_path, 'wb') as f:
                     f.write(response.content)
-                print(f"✅ {mood.capitalize()} music downloaded")
                 return music_path
-            else:
-                return self._generate_silent_audio()
-
-        except Exception as e:
-            print(f"⚠️ Music error: {e}, using silent audio")
-            return self._generate_silent_audio()
+        except:
+            pass
+        
+        return self._generate_silent_audio()
 
     def _generate_image(self, prompt: str) -> str:
-        """Generate single image with retry logic"""
-        enhanced_prompt = f"{prompt}, ultra detailed, professional photography, vibrant colors, 4K quality"
-        encoded = quote(enhanced_prompt)
+        """Generate image"""
+        enhanced = f"{prompt}, ultra detailed, professional, vibrant, 4K"
+        encoded = quote(enhanced)
 
         attempts = [
             f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=true&model=flux",
             f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=true&model=turbo",
-            f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=true",
         ]
 
-        for i, url in enumerate(attempts):
+        for url in attempts:
             try:
                 response = requests.get(url, timeout=260)
                 if response.status_code == 200:
                     return base64.b64encode(response.content).decode()
-            except Exception as e:
-                print(f"⚠️ Attempt {i+1} error: {e}")
+            except:
+                pass
+            time.sleep(15)
 
-            if i < len(attempts) - 1:
-                time.sleep(20)
-
-        raise Exception("All image generation attempts failed")
+        raise Exception("Image generation failed")
 
     def _generate_silent_audio(self) -> str:
-        """Generate silent audio fallback"""
-        temp_dir = tempfile.gettempdir()
-        silent_path = f"{temp_dir}/silent.mp3"
-
-        cmd = [
-            'ffmpeg', '-y',
-            '-f', 'lavfi',
-            '-i', 'anullsrc=r=44100:cl=stereo',
-            '-t', '60',
-            '-q:a', '9',
-            '-acodec', 'libmp3lame',
-            silent_path
-        ]
-
+        """Generate silent audio"""
+        silent_path = f"{tempfile.gettempdir()}/silent.mp3"
+        cmd = ['ffmpeg', '-y', '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
+               '-t', '60', '-q:a', '9', '-acodec', 'libmp3lame', silent_path]
         subprocess.run(cmd, check=True, capture_output=True)
         return silent_path
 
-    def _create_enhanced_video(self, image_files: list, music_path: str, output_path: str,
-                               duration_per_image: float, total_duration: int,
-                               text_designs: list):
-        """Create video with AI-driven text overlays per image"""
-        temp_dir = os.path.dirname(image_files[0])
+    def _create_ai_driven_video(self, images: list, clips: list, music_path: str,
+                                output_path: str, duration_per: float, total: int):
+        """Create video with AI-designed effects per clip"""
+        temp_dir = os.path.dirname(images[0])
 
-        # Step 1: Add AI-designed text overlays to each image
-        overlay_images = []
-        for i, (img_path, design) in enumerate(zip(image_files, text_designs)):
-            overlay_path = f"{temp_dir}/overlay_{i:03d}.jpg"
-            print(f"📝 Image {i+1}: '{design['text']}' at {design['position']} (box={design['box']})")
-            self._add_ai_driven_text(img_path, overlay_path, design)
-            overlay_images.append(overlay_path)
-
-        # Step 2: Create video with dynamic transitions
-        self._create_video_with_transitions(
-            overlay_images,
-            music_path,
-            output_path,
-            duration_per_image,
-            total_duration
-        )
-
-    def _add_ai_driven_text(self, input_path: str, output_path: str, design: dict):
-        """Add text overlay based on AI-generated design for this specific image"""
-        # Extract design parameters (already sanitized in _parse_ai_response)
-        text = design['text']
-        position = design['position']
-        font_size = design['font_size']
-        use_box = design['box']
-        color = design['color'].replace('#', '0x')
-
-        # Position mapping
-        position_map = {
-            'top': 'x=(w-text_w)/2:y=120',
-            'center': 'x=(w-text_w)/2:y=(h-text_h)/2',
-            'bottom': 'x=(w-text_w)/2:y=h-text_h-120'
-        }
-        pos_str = position_map.get(position, position_map['center'])
-
-        # Build FFmpeg command based on AI's design choice
-        if use_box:
-            # With box background
-            vf = f"drawtext=text='{text}':fontsize={font_size}:fontcolor={color}:{pos_str}:box=1:boxcolor=black@0.5:boxborderw=10"
-        else:
-            # No box, just text
-            vf = f"drawtext=text='{text}':fontsize={font_size}:fontcolor={color}:{pos_str}"
-
-        cmd = ['ffmpeg', '-y', '-i', input_path, '-vf', vf, '-q:v', '2', output_path]
-
-        try:
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
-        except subprocess.CalledProcessError as e:
-            # Single fallback: copy image without text
-            print(f"   ⚠️ Text overlay failed for this image, copying without text")
-            subprocess.run(['ffmpeg', '-y', '-i', input_path, '-q:v', '2', output_path], check=True, capture_output=True)
-
-    def _create_video_with_transitions(self, image_files: list, music_path: str,
-                                       output_path: str, duration_per_image: float,
-                                       total_duration: int):
-        """Create video with dynamic Ken Burns zoom effect to look like a real Reel"""
-        temp_dir = os.path.dirname(image_files[0])
-
-        # Create individual video clips with varied zoom effects
-        clips = []
-        for i, img in enumerate(image_files):
+        # Process each clip with AI specs
+        video_clips = []
+        for i, (img, clip) in enumerate(zip(images, clips)):
             clip_path = f"{temp_dir}/clip_{i:03d}.mp4"
-
-            # Alternate between zoom in and zoom out for variety
-            if i % 2 == 0:
-                # Zoom in effect
-                zoom_filter = f"zoompan=z='min(zoom+0.002,1.3)':d={int(30*duration_per_image)}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920"
-            else:
-                # Zoom out effect
-                zoom_filter = f"zoompan=z='if(lte(zoom,1.0),1.3,max(1.0,zoom-0.002))':d={int(30*duration_per_image)}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920"
-
-            # Add slight panning for more dynamic feel
-            if i % 3 == 0:
-                # Pan left to right
-                zoom_filter = f"zoompan=z='min(zoom+0.0015,1.2)':d={int(30*duration_per_image)}:x='if(gte(on,1),x+2,0)':y='ih/2-(ih/zoom/2)':s=1080x1920"
-
+            
+            print(f"🎬 Clip {i+1}: '{clip['text_overlay']}' | {clip['zoom_effect']} | {clip['transition']}")
+            
+            # Build FFmpeg filter based on AI design
+            filters = []
+            
+            # 1. Add text overlay (AI-designed)
+            text_filter = self._build_text_filter(clip)
+            if text_filter:
+                filters.append(text_filter)
+            
+            # 2. Add zoom/pan effect (AI-chosen)
+            zoom_filter = self._build_zoom_filter(clip['zoom_effect'], duration_per)
+            filters.append(zoom_filter)
+            
+            # 3. Add transition effect (AI-chosen)
+            transition_filter = self._build_transition_filter(clip['transition'], duration_per)
+            filters.append(transition_filter)
+            
+            # Combine all filters
+            vf = ','.join(filters) + ',format=yuv420p'
+            
             cmd = [
                 'ffmpeg', '-y',
-                '-loop', '1',
-                '-i', img,
-                '-vf', f"{zoom_filter},format=yuv420p,fade=t=in:st=0:d=0.3,fade=t=out:st={duration_per_image-0.3}:d=0.3",
-                '-t', str(duration_per_image),
+                '-loop', '1', '-i', img,
+                '-vf', vf,
+                '-t', str(duration_per),
                 '-r', '30',
                 '-c:v', 'libx264',
                 '-preset', 'medium',
                 '-crf', '20',
                 clip_path
             ]
-            subprocess.run(cmd, check=True, capture_output=True)
-            clips.append(clip_path)
+            
+            try:
+                subprocess.run(cmd, check=True, capture_output=True, text=True)
+                video_clips.append(clip_path)
+            except subprocess.CalledProcessError as e:
+                print(f"   ⚠️ Complex filter failed, using simple version")
+                # Simplified fallback for this clip
+                simple_vf = f"{zoom_filter},format=yuv420p"
+                cmd_simple = [
+                    'ffmpeg', '-y', '-loop', '1', '-i', img,
+                    '-vf', simple_vf, '-t', str(duration_per),
+                    '-r', '30', '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', clip_path
+                ]
+                subprocess.run(cmd_simple, check=True, capture_output=True)
+                video_clips.append(clip_path)
 
-        # Concatenate all clips
-        concat_file = f"{temp_dir}/concat_clips.txt"
+        # Concatenate all clips with music
+        concat_file = f"{temp_dir}/concat.txt"
         with open(concat_file, 'w') as f:
-            for clip in clips:
+            for clip in video_clips:
                 f.write(f"file '{clip}'\n")
 
-        # Merge with music
         cmd = [
             'ffmpeg', '-y',
-            '-f', 'concat',
-            '-safe', '0',
-            '-i', concat_file,
+            '-f', 'concat', '-safe', '0', '-i', concat_file,
             '-i', music_path,
-            '-c:v', 'copy',
-            '-c:a', 'aac',
-            '-b:a', '192k',
-            '-shortest',
-            '-t', str(total_duration),
-            output_path
+            '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k',
+            '-shortest', '-t', str(total), output_path
         ]
-
         subprocess.run(cmd, check=True, capture_output=True)
+
+    def _build_text_filter(self, clip: dict) -> str:
+        """Build FFmpeg text filter from AI design"""
+        text = clip['text_overlay']
+        if not text or len(text) < 2:
+            return None
+        
+        # Position
+        pos_map = {
+            'top': 'x=(w-text_w)/2:y=100',
+            'center': 'x=(w-text_w)/2:y=(h-text_h)/2',
+            'bottom': 'x=(w-text_w)/2:y=h-text_h-100'
+        }
+        pos = pos_map[clip['text_position']]
+        
+        # Color
+        color_map = {
+            'white': 'white', 'yellow': 'yellow', 
+            'red': 'red', 'cyan': 'cyan', 'green': 'green'
+        }
+        color = color_map[clip['text_color']]
+        
+        size = clip['text_size']
+        
+        # Style
+        if clip['text_style'] == 'box':
+            return f"drawtext=text='{text}':fontsize={size}:fontcolor={color}:{pos}:box=1:boxcolor=black@0.5:boxborderw=8"
+        elif clip['text_style'] == 'shadow':
+            return f"drawtext=text='{text}':fontsize={size}:fontcolor={color}:{pos}:shadowcolor=black:shadowx=2:shadowy=2"
+        else:  # plain
+            return f"drawtext=text='{text}':fontsize={size}:fontcolor={color}:{pos}"
+
+    def _build_zoom_filter(self, effect: str, duration: float) -> str:
+        """Build FFmpeg zoom/pan filter from AI choice"""
+        d = int(30 * duration)
+        
+        if effect == 'zoom_in':
+            return f"zoompan=z='min(zoom+0.002,1.3)':d={d}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920"
+        elif effect == 'zoom_out':
+            return f"zoompan=z='if(lte(zoom,1.0),1.3,max(1.0,zoom-0.002))':d={d}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920"
+        elif effect == 'pan_left':
+            return f"zoompan=z='1.2':d={d}:x='if(gte(on,1),x-2,iw/2)':y='ih/2-(ih/zoom/2)':s=1080x1920"
+        elif effect == 'pan_right':
+            return f"zoompan=z='1.2':d={d}:x='if(gte(on,1),x+2,0)':y='ih/2-(ih/zoom/2)':s=1080x1920"
+        else:  # static
+            return f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
+
+    def _build_transition_filter(self, transition: str, duration: float) -> str:
+        """Build FFmpeg transition filter"""
+        fade_dur = min(0.3, duration / 3)
+        
+        if transition == 'fade':
+            return f"fade=t=in:st=0:d={fade_dur},fade=t=out:st={duration-fade_dur}:d={fade_dur}"
+        elif transition == 'slide':
+            # Slide in from right
+            return f"fade=t=in:st=0:d={fade_dur}"
+        else:  # dissolve
+            return f"fade=t=in:st=0:d={fade_dur},fade=t=out:st={duration-fade_dur}:d={fade_dur}"
 
 
 class CloudinaryVideoUploader:
     @staticmethod
     def upload_video(video_base64: str, cloud_name: str, upload_preset: str,
                      api_key: str, api_secret: str) -> str:
-        """Upload video to Cloudinary"""
         import hashlib
-
         timestamp = int(time.time())
-        params = {
-            'api_key': api_key,
-            'timestamp': timestamp,
-            'upload_preset': upload_preset,
-        }
-
+        params = {'api_key': api_key, 'timestamp': timestamp, 'upload_preset': upload_preset}
         filtered = {k: v for k, v in params.items() if k not in {'file', 'cloud_name', 'resource_type', 'api_key'}}
         sorted_params = sorted(filtered.items())
         string_to_sign = '&'.join(f"{k}={v}" for k, v in sorted_params) + api_secret
         signature = hashlib.sha1(string_to_sign.encode()).hexdigest()
 
         url = f"https://api.cloudinary.com/v1_1/{cloud_name}/video/upload"
-
         files = {'file': f"data:video/mp4;base64,{video_base64}"}
-        data = {
-            'api_key': api_key,
-            'signature': signature,
-            'timestamp': timestamp,
-            'upload_preset': upload_preset,
-        }
+        data = {'api_key': api_key, 'signature': signature, 'timestamp': timestamp, 'upload_preset': upload_preset}
 
-        print("☁️ Uploading video to Cloudinary...")
+        print("☁️ Uploading...")
         response = requests.post(url, files=files, data=data, timeout=120)
         response_data = response.json()
 
         if response.status_code != 200:
-            raise Exception(f"Upload failed: {response_data.get('error', {}).get('message', 'Unknown error')}")
-
+            raise Exception(f"Upload failed: {response_data.get('error', {}).get('message')}")
         return response_data['secure_url']
 
 
@@ -535,64 +472,56 @@ class InstagramReelPublisher:
         self.api_version = 'v20.0'
         self.base_url = f'https://graph.facebook.com/{self.api_version}'
 
-    def publish_reel(self, account_id: str, access_token: str,
-                     video_url: str, caption: str) -> str:
-        """Publish Reel to Instagram"""
-
+    def publish_reel(self, account_id: str, access_token: str, video_url: str, caption: str) -> str:
         create_url = f"{self.base_url}/{account_id}/media"
         create_params = {
-            'media_type': 'REELS',
-            'video_url': video_url,
-            'caption': caption,
-            'share_to_feed': True,
-            'access_token': access_token
+            'media_type': 'REELS', 'video_url': video_url,
+            'caption': caption, 'share_to_feed': True, 'access_token': access_token
         }
 
-        print("📱 Creating Reel container...")
+        print("📱 Creating container...")
         response = requests.post(create_url, data=create_params, timeout=30)
         data = response.json()
 
         if response.status_code != 200:
-            raise Exception(data.get('error', {}).get('message', 'Container creation failed'))
+            raise Exception(data.get('error', {}).get('message'))
 
         container_id = data['id']
-        print(f"✅ Container created: {container_id}")
+        print(f"✅ Container: {container_id}")
 
-        print("⏳ Processing video...")
-        max_retries = 30
-        for i in range(max_retries):
-            status_url = f"https://graph.facebook.com/{container_id}"
-            status_params = {'fields': 'status_code', 'access_token': access_token}
-
-            status_response = requests.get(status_url, params=status_params, timeout=10)
-            status_data = status_response.json()
-            status_code = status_data.get('status_code')
-
+        print("⏳ Processing...")
+        for i in range(30):
+            status_response = requests.get(
+                f"https://graph.facebook.com/{container_id}",
+                params={'fields': 'status_code', 'access_token': access_token},
+                timeout=10
+            )
+            status_code = status_response.json().get('status_code')
             print(f"Status: {status_code}")
 
             if status_code == 'FINISHED':
                 break
             elif status_code in ['ERROR', 'EXPIRED']:
-                raise Exception(f"Video processing failed: {status_code}")
-
+                raise Exception(f"Processing failed: {status_code}")
             time.sleep(5)
 
-        print("🚀 Publishing Reel...")
-        publish_url = f"{self.base_url}/{account_id}/media_publish"
-        publish_params = {'creation_id': container_id, 'access_token': access_token}
-
-        publish_response = requests.post(publish_url, data=publish_params, timeout=30)
+        print("🚀 Publishing...")
+        publish_response = requests.post(
+            f"{self.base_url}/{account_id}/media_publish",
+            data={'creation_id': container_id, 'access_token': access_token},
+            timeout=30
+        )
         publish_data = publish_response.json()
 
         if publish_response.status_code != 200:
-            raise Exception(publish_data.get('error', {}).get('message', 'Publishing failed'))
+            raise Exception(publish_data.get('error', {}).get('message'))
 
-        print(f"✅ Reel published! ID: {publish_data['id']}")
+        print(f"✅ Published: {publish_data['id']}")
         return publish_data['id']
 
 
 def main():
-    print("🎬 ENHANCED Instagram Reel Generator (AI-Driven)")
+    print("🎬 TRULY AI-DRIVEN Instagram Reel Generator")
     print("=" * 50)
 
     google_api_key = os.getenv('GOOGLE_API_KEY')
@@ -604,9 +533,8 @@ def main():
     instagram_account_id = os.getenv('INSTAGRAM_ACCOUNT_ID')
     instagram_access_token = os.getenv('INSTAGRAM_ACCESS_TOKEN')
 
-    # Check if at least one AI API key is available
-    if not google_api_key and not openai_api_key:
-        print("❌ Missing: At least one of GOOGLE_API_KEY or OPENAI_API_KEY is required")
+    if not (google_api_key or openai_api_key):
+        print("❌ Need at least one AI API key")
         return
 
     required = {
@@ -624,25 +552,18 @@ def main():
         return
 
     try:
-        # Configuration
-        niche = os.getenv('REEL_NICHE', 'Womens Motivation, Mens Toughness')
+        niche = os.getenv('REEL_NICHE', 'Motivation')
         num_images = int(os.getenv('REEL_IMAGES', '20'))
         duration = int(os.getenv('REEL_DURATION', '15'))
 
         print(f"🎯 Niche: {niche}")
-        print(f"📸 Images: {num_images}")
-        print(f"⏱️ Duration: {duration} seconds")
-        if google_api_key:
-            print("🤖 Primary AI: Gemini")
-        if openai_api_key:
-            print("🔄 Fallback AI: OpenAI")
+        print(f"📸 Clips: {num_images}")
+        print(f"⏱️ Duration: {duration}s")
         print("=" * 50)
 
-        # Generate enhanced reel
-        generator = EnhancedReelGenerator(google_api_key, openai_api_key)
+        generator = TrulyAIReelGenerator(google_api_key, openai_api_key)
         reel_data = generator.generate_reel(niche, num_images, duration)
 
-        # Upload to Cloudinary
         uploader = CloudinaryVideoUploader()
         video_url = uploader.upload_video(
             reel_data['video_base64'],
@@ -652,9 +573,8 @@ def main():
             cloudinary_api_secret
         )
 
-        print(f"✅ Video URL: {video_url}")
+        print(f"✅ Video: {video_url}")
 
-        # Publish to Instagram
         publisher = InstagramReelPublisher()
         full_caption = f"{reel_data['caption']}\n\n{' '.join(reel_data['hashtags'])}"
 
@@ -666,10 +586,9 @@ def main():
         )
 
         print("=" * 50)
-        print("🎉 ENHANCED REEL PUBLISHED SUCCESSFULLY!")
+        print("🎉 SUCCESS!")
         print(f"📝 Caption: {reel_data['caption']}")
-        print(f"🏷️ Hashtags: {' '.join(reel_data['hashtags'])}")
-        print(f"🆔 Post ID: {post_id}")
+        print(f"🆔 Post: {post_id}")
         print("=" * 50)
 
     except Exception as e:
