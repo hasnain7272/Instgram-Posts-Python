@@ -51,7 +51,7 @@ jobs:
           REEL_IMAGES: ${{ github.event.inputs.num_images || '20' }}
           REEL_DURATION: ${{ github.event.inputs.duration || '15' }}
         run: |
-          python insta_reels.py
+          python insta_reels_new.py
 
       - name: Success
         if: success()
