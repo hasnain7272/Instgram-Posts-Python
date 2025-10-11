@@ -142,9 +142,15 @@ IMPORTANT: Return ONLY valid JSON, no markdown, no explanations.
 Generate:
 1. {count} diverse, ultra-detailed image prompts (realistic, cohesive for slideshow/Reel)
 2. Each prompt gets a hook_score (1-10) rating its visual impact/attention-grabbing power
-3. {count} short, punchy text overlays (MAX 4-5 WORDS EACH like "Push Your Limits")
+3. {count} short, punchy text overlays (MAX 3-4 WORDS, NO SPECIAL CHARACTERS like quotes/colons/commas, simple text only like "Push The Limits" or "Stay Strong")
 4. Viral catchy caption + 20 hashtags
-5. Complete style guide for this niche (FFmpeg compatible)
+5. Complete style guide for this niche
+
+CRITICAL TEXT RULES:
+- Text overlays must be simple words only (no punctuation, no special characters)
+- Maximum 4 words per overlay
+- Use basic alphabet and numbers only
+- Examples: "Never Give Up", "Stay Focused", "You Got This"
 
 Return this EXACT JSON structure:
 {{
@@ -157,8 +163,8 @@ Return this EXACT JSON structure:
     "hashtags": ["#tag1", "#tag2", ..., "#reels", "#viral"],
     "style": {{
         "font": "Sans-Serif",
-        "font_size": 60,
-        "color": "#HEXCOLOR (e.g., #FFD700)",
+        "font_size": 55,
+        "color": "#FFFFFF or #FFD700 or #FF0000",
         "position": "center or top or bottom",
         "transitions": ["fade", "slideleft", "slideright"],
         "mood": "energetic or calm or upbeat or intense or chill"
@@ -238,10 +244,24 @@ Return this EXACT JSON structure:
                 for key, value in self.default_style.items():
                     if key not in data['style']:
                         data['style'][key] = value
+                
+                # Sanitize font_size to safe range
+                if 'font_size' in data['style']:
+                    try:
+                        font_size = int(data['style']['font_size'])
+                        data['style']['font_size'] = max(30, min(font_size, 65))  # Clamp between 30-65
+                    except:
+                        data['style']['font_size'] = 55
 
-            # Ensure enough text overlays
+            # Ensure enough text overlays and sanitize them
             if 'text_overlays' not in data or len(data['text_overlays']) < count:
                 data['text_overlays'] = [f"Moment {i+1}" for i in range(count)]
+            else:
+                # Clean up text overlays - remove special characters
+                data['text_overlays'] = [
+                    ''.join(c for c in text if c.isalnum() or c.isspace())[:30] 
+                    for text in data['text_overlays'][:count]
+                ]
 
             # Ensure prompts exist
             if 'prompts' not in data or len(data['prompts']) < count:
@@ -359,9 +379,13 @@ Return this EXACT JSON structure:
         )
 
     def _add_text_overlay(self, input_path: str, output_path: str, text: str, style: dict):
-        """Burn text onto image using FFmpeg with proper text wrapping"""
-        # Escape text for FFmpeg
-        text_escaped = text.replace("'", "'\\\\\\''").replace(":", "\\:").replace(",", "\\,")
+        """Burn text onto image using FFmpeg with multiple fallback strategies"""
+        # Escape text for FFmpeg (critical for special characters)
+        text_escaped = text.replace("'", "").replace('"', '').replace(":", "").replace(",", "")
+        
+        # Simplify text further if needed
+        if len(text_escaped) > 30:
+            text_escaped = text_escaped[:27] + "..."
 
         # Position mapping with safe margins
         position_map = {
@@ -372,39 +396,75 @@ Return this EXACT JSON structure:
 
         position = position_map.get(style.get('position', 'center'), position_map['center'])
 
-        # Responsive font size based on text length
-        text_length = len(text)
-        if text_length > 50:
-            font_size = 45
-        elif text_length > 30:
-            font_size = 55
+        # Safe font size (never exceed 65)
+        text_length = len(text_escaped)
+        if text_length > 40:
+            font_size = 40
+        elif text_length > 25:
+            font_size = 50
         else:
-            font_size = min(style.get('font_size', 65), 70)
+            font_size = min(style.get('font_size', 60), 65)
 
         color = style.get('color', '#FFFFFF').replace('#', '0x')
 
-        # Add text with box for better visibility
-        cmd = [
-            'ffmpeg', '-y',
-            '-i', input_path,
-            '-vf', f"drawtext=text='{text_escaped}':fontsize={font_size}:fontcolor={color}:{position}:box=1:boxcolor=black@0.6:boxborderw=15:line_spacing=10",
-            '-q:v', '2',
-            output_path
+        # Strategy 1: Full featured (box + shadow)
+        cmd1 = [
+            'ffmpeg', '-y', '-i', input_path,
+            '-vf', f"drawtext=text='{text_escaped}':fontsize={font_size}:fontcolor={color}:{position}:box=1:boxcolor=black@0.6:boxborderw=10",
+            '-q:v', '2', output_path
         ]
 
-        try:
-            subprocess.run(cmd, check=True, capture_output=True)
-        except subprocess.CalledProcessError:
-            # Fallback: simpler text without box
-            print(f"⚠️ Text overlay failed, trying simpler version...")
-            cmd_simple = [
-                'ffmpeg', '-y',
-                '-i', input_path,
-                '-vf', f"drawtext=text='{text_escaped}':fontsize={font_size}:fontcolor={color}:{position}",
-                '-q:v', '2',
-                output_path
-            ]
-            subprocess.run(cmd_simple, check=True, capture_output=True)
+        # Strategy 2: Simple with box (no border width)
+        cmd2 = [
+            'ffmpeg', '-y', '-i', input_path,
+            '-vf', f"drawtext=text='{text_escaped}':fontsize={font_size}:fontcolor={color}:{position}:box=1:boxcolor=black@0.5",
+            '-q:v', '2', output_path
+        ]
+
+        # Strategy 3: Minimal (just text, no box)
+        cmd3 = [
+            'ffmpeg', '-y', '-i', input_path,
+            '-vf', f"drawtext=text='{text_escaped}':fontsize={font_size}:fontcolor={color}:{position}",
+            '-q:v', '2', output_path
+        ]
+
+        # Strategy 4: Ultra-safe (fixed position, small font)
+        cmd4 = [
+            'ffmpeg', '-y', '-i', input_path,
+            '-vf', f"drawtext=text='{text_escaped}':fontsize=40:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2",
+            '-q:v', '2', output_path
+        ]
+
+        # Strategy 5: Last resort - just copy image (no text)
+        cmd5 = ['ffmpeg', '-y', '-i', input_path, '-q:v', '2', output_path]
+
+        strategies = [
+            ("with box and border", cmd1),
+            ("with simple box", cmd2),
+            ("minimal text only", cmd3),
+            ("ultra-safe mode", cmd4),
+            ("no text (copy only)", cmd5)
+        ]
+
+        for strategy_name, cmd in strategies:
+            try:
+                result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+                if strategy_name != "with box and border":
+                    print(f"⚠️ Using fallback strategy: {strategy_name}")
+                return  # Success!
+            except subprocess.CalledProcessError as e:
+                stderr_msg = e.stderr[:200] if e.stderr else 'No error details'
+                print(f"⚠️ Strategy '{strategy_name}' failed")
+                if "Invalid" in stderr_msg or "Unknown" in stderr_msg:
+                    print(f"   Error hint: {stderr_msg}")
+                continue
+            except Exception as e:
+                print(f"⚠️ Strategy '{strategy_name}' exception: {str(e)[:100]}")
+                continue
+
+        # If all strategies fail, raise error
+        print("❌ All text overlay strategies exhausted!")
+        raise Exception("All text overlay strategies failed")
 
     def _create_video_with_transitions(self, image_files: list, music_path: str,
                                        output_path: str, duration_per_image: float,
