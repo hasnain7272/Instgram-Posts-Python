@@ -77,15 +77,15 @@ class EnhancedReelGenerator:
                 json.dump(content_data, f)
             print("✅ AI Content generated & checkpointed")
 
-        print(f"🎨 Style: {content_data['style']}")
-        print(f"🎵 Mood: {content_data['style']['mood']}")
+        print(f"🎨 Style: AI-driven per image")
+        print(f"🎵 Mood: {content_data['mood']}")
 
         # 2. Sort images by hook score (highest first)
         sorted_prompts = self._sort_by_hook_score(content_data['prompts'])
         print(f"🎯 Hook-first sequencing applied")
 
         # 3. Download smart music
-        music_path = self._download_smart_music(content_data['style']['mood'])
+        music_path = self._download_smart_music(content_data['mood'])
 
         # 4. Generate all images
         image_files = []
@@ -117,8 +117,7 @@ class EnhancedReelGenerator:
             video_path,
             duration_per_image,
             duration,
-            content_data['text_overlays'],
-            content_data['style']
+            content_data['text_designs']
         )
 
         # 6. Read video as base64
@@ -142,33 +141,33 @@ IMPORTANT: Return ONLY valid JSON, no markdown, no explanations.
 Generate:
 1. {count} diverse, ultra-detailed image prompts (realistic, cohesive for slideshow/Reel)
 2. Each prompt gets a hook_score (1-10) rating its visual impact/attention-grabbing power
-3. {count} short, punchy text overlays (MAX 3-4 WORDS, NO SPECIAL CHARACTERS like quotes/colons/commas, simple text only like "Push The Limits" or "Stay Strong")
+3. For EACH image, generate text overlay with its own style settings:
+   - text: 2-4 simple words (no special characters)
+   - position: top/center/bottom (based on image content)
+   - font_size: 40-60 (readable size)
+   - box: true/false (whether to add background box)
+   - color: #FFFFFF or #FFD700 or #FF0000 (contrasting with image)
 4. Viral catchy caption + 20 hashtags
-5. Complete style guide for this niche
+5. Overall mood for music selection
 
 CRITICAL TEXT RULES:
-- Text overlays must be simple words only (no punctuation, no special characters)
-- Maximum 4 words per overlay
-- Use basic alphabet and numbers only
-- Examples: "Never Give Up", "Stay Focused", "You Got This"
+- Simple words only (no punctuation)
+- Position should complement the image subject
+- Use box=true for busy backgrounds, box=false for clean backgrounds
+- Vary the designs across images for visual interest
 
 Return this EXACT JSON structure:
 {{
     "prompts": [
-        {{"prompt": "detailed prompt here...", "hook_score": 8}},
-        {{"prompt": "another prompt...", "hook_score": 6}}
+        {{"prompt": "detailed prompt here...", "hook_score": 8}}
     ],
-    "text_overlays": ["Short text 1", "Text 2", "Quote 3"...],
+    "text_designs": [
+        {{"text": "Push Harder", "position": "top", "font_size": 50, "box": true, "color": "#FFFFFF"}},
+        {{"text": "Never Quit", "position": "bottom", "font_size": 55, "box": false, "color": "#FFD700"}}
+    ],
     "caption": "viral caption here",
     "hashtags": ["#tag1", "#tag2", ..., "#reels", "#viral"],
-    "style": {{
-        "font": "Sans-Serif",
-        "font_size": 55,
-        "color": "#FFFFFF or #FFD700 or #FF0000",
-        "position": "center or top or bottom",
-        "transitions": ["fade", "slideleft", "slideright"],
-        "mood": "energetic or calm or upbeat or intense or chill"
-    }}
+    "mood": "energetic or calm or upbeat or intense or chill"
 }}
 """
 
@@ -237,35 +236,44 @@ Return this EXACT JSON structure:
         try:
             data = json.loads(json_str)
 
-            # Validate and fill missing fields
-            if 'style' not in data or not isinstance(data['style'], dict):
-                data['style'] = self.default_style.copy()
-            else:
-                for key, value in self.default_style.items():
-                    if key not in data['style']:
-                        data['style'][key] = value
-                
-                # Sanitize font_size to safe range
-                if 'font_size' in data['style']:
-                    try:
-                        font_size = int(data['style']['font_size'])
-                        data['style']['font_size'] = max(30, min(font_size, 65))  # Clamp between 30-65
-                    except:
-                        data['style']['font_size'] = 55
+            # Validate mood (for music)
+            if 'mood' not in data:
+                data['mood'] = 'energetic'
 
-            # Ensure enough text overlays and sanitize them
-            if 'text_overlays' not in data or len(data['text_overlays']) < count:
-                data['text_overlays'] = [f"Moment {i+1}" for i in range(count)]
-            else:
-                # Clean up text overlays - remove special characters
-                data['text_overlays'] = [
-                    ''.join(c for c in text if c.isalnum() or c.isspace())[:30] 
-                    for text in data['text_overlays'][:count]
+            # Ensure text_designs exist and are valid
+            if 'text_designs' not in data or len(data['text_designs']) < count:
+                print("⚠️ AI didn't provide text_designs, using defaults")
+                data['text_designs'] = [
+                    {
+                        'text': f'Moment {i+1}',
+                        'position': 'center',
+                        'font_size': 50,
+                        'box': True,
+                        'color': '#FFFFFF'
+                    } for i in range(count)
                 ]
+            else:
+                # Sanitize each text design
+                for i, design in enumerate(data['text_designs'][:count]):
+                    # Clean text
+                    design['text'] = ''.join(c for c in design.get('text', f'Text {i+1}') if c.isalnum() or c.isspace())[:30]
+                    # Validate position
+                    design['position'] = design.get('position', 'center')
+                    if design['position'] not in ['top', 'center', 'bottom']:
+                        design['position'] = 'center'
+                    # Clamp font size
+                    design['font_size'] = max(35, min(int(design.get('font_size', 50)), 60))
+                    # Ensure box is boolean
+                    design['box'] = bool(design.get('box', True))
+                    # Validate color
+                    color = design.get('color', '#FFFFFF')
+                    if not color.startswith('#'):
+                        color = '#FFFFFF'
+                    design['color'] = color
 
             # Ensure prompts exist
             if 'prompts' not in data or len(data['prompts']) < count:
-                data['prompts'] = [{'prompt': f'{niche} scene {i+1}', 'hook_score': 5} for i in range(count)]
+                data['prompts'] = [{'prompt': f'Beautiful {niche} scene {i+1}, professional photography', 'hook_score': 5} for i in range(count)]
 
             return data
 
@@ -277,10 +285,18 @@ Return this EXACT JSON structure:
         """Return safe fallback content structure"""
         return {
             'prompts': [{'prompt': f'Beautiful {niche} scene {i+1}, professional photography, high quality', 'hook_score': 5} for i in range(count)],
-            'text_overlays': [f'Moment {i+1}' for i in range(count)],
+            'text_designs': [
+                {
+                    'text': f'Moment {i+1}',
+                    'position': 'center',
+                    'font_size': 50,
+                    'box': True,
+                    'color': '#FFFFFF'
+                } for i in range(count)
+            ],
             'caption': f'Amazing {niche} content! 🔥',
             'hashtags': ['#reels', '#viral', '#instagram', '#explore', '#trending'],
-            'style': self.default_style.copy()
+            'mood': 'energetic'
         }
 
     def _sort_by_hook_score(self, prompts: list) -> list:
@@ -357,15 +373,16 @@ Return this EXACT JSON structure:
 
     def _create_enhanced_video(self, image_files: list, music_path: str, output_path: str,
                                duration_per_image: float, total_duration: int,
-                               text_overlays: list, style: dict):
-        """Create video with text overlays and dynamic transitions"""
+                               text_designs: list):
+        """Create video with AI-driven text overlays per image"""
         temp_dir = os.path.dirname(image_files[0])
 
-        # Step 1: Add text overlays to images
+        # Step 1: Add AI-designed text overlays to each image
         overlay_images = []
-        for i, (img_path, text) in enumerate(zip(image_files, text_overlays)):
+        for i, (img_path, design) in enumerate(zip(image_files, text_designs)):
             overlay_path = f"{temp_dir}/overlay_{i:03d}.jpg"
-            self._add_text_overlay(img_path, overlay_path, text, style)
+            print(f"📝 Image {i+1}: '{design['text']}' at {design['position']} (box={design['box']})")
+            self._add_ai_driven_text(img_path, overlay_path, design)
             overlay_images.append(overlay_path)
 
         # Step 2: Create video with dynamic transitions
@@ -374,101 +391,46 @@ Return this EXACT JSON structure:
             music_path,
             output_path,
             duration_per_image,
-            total_duration,
-            style['transitions']
+            total_duration
         )
 
-    def _add_text_overlay(self, input_path: str, output_path: str, text: str, style: dict):
-        """Burn text onto image using FFmpeg with multiple fallback strategies"""
-        # Escape text for FFmpeg (critical for special characters)
-        text_escaped = text.replace("'", "").replace('"', '').replace(":", "").replace(",", "")
-        
-        # Simplify text further if needed
-        if len(text_escaped) > 30:
-            text_escaped = text_escaped[:27] + "..."
+    def _add_ai_driven_text(self, input_path: str, output_path: str, design: dict):
+        """Add text overlay based on AI-generated design for this specific image"""
+        # Extract design parameters (already sanitized in _parse_ai_response)
+        text = design['text']
+        position = design['position']
+        font_size = design['font_size']
+        use_box = design['box']
+        color = design['color'].replace('#', '0x')
 
-        # Position mapping with safe margins
+        # Position mapping
         position_map = {
-            'top': 'x=(w-text_w)/2:y=150',
+            'top': 'x=(w-text_w)/2:y=120',
             'center': 'x=(w-text_w)/2:y=(h-text_h)/2',
-            'bottom': 'x=(w-text_w)/2:y=h-text_h-150'
+            'bottom': 'x=(w-text_w)/2:y=h-text_h-120'
         }
+        pos_str = position_map.get(position, position_map['center'])
 
-        position = position_map.get(style.get('position', 'center'), position_map['center'])
-
-        # Safe font size (never exceed 65)
-        text_length = len(text_escaped)
-        if text_length > 40:
-            font_size = 40
-        elif text_length > 25:
-            font_size = 50
+        # Build FFmpeg command based on AI's design choice
+        if use_box:
+            # With box background
+            vf = f"drawtext=text='{text}':fontsize={font_size}:fontcolor={color}:{pos_str}:box=1:boxcolor=black@0.5:boxborderw=10"
         else:
-            font_size = min(style.get('font_size', 60), 65)
+            # No box, just text
+            vf = f"drawtext=text='{text}':fontsize={font_size}:fontcolor={color}:{pos_str}"
 
-        color = style.get('color', '#FFFFFF').replace('#', '0x')
+        cmd = ['ffmpeg', '-y', '-i', input_path, '-vf', vf, '-q:v', '2', output_path]
 
-        # Strategy 1: Full featured (box + shadow)
-        cmd1 = [
-            'ffmpeg', '-y', '-i', input_path,
-            '-vf', f"drawtext=text='{text_escaped}':fontsize={font_size}:fontcolor={color}:{position}:box=1:boxcolor=black@0.6:boxborderw=10",
-            '-q:v', '2', output_path
-        ]
-
-        # Strategy 2: Simple with box (no border width)
-        cmd2 = [
-            'ffmpeg', '-y', '-i', input_path,
-            '-vf', f"drawtext=text='{text_escaped}':fontsize={font_size}:fontcolor={color}:{position}:box=1:boxcolor=black@0.5",
-            '-q:v', '2', output_path
-        ]
-
-        # Strategy 3: Minimal (just text, no box)
-        cmd3 = [
-            'ffmpeg', '-y', '-i', input_path,
-            '-vf', f"drawtext=text='{text_escaped}':fontsize={font_size}:fontcolor={color}:{position}",
-            '-q:v', '2', output_path
-        ]
-
-        # Strategy 4: Ultra-safe (fixed position, small font)
-        cmd4 = [
-            'ffmpeg', '-y', '-i', input_path,
-            '-vf', f"drawtext=text='{text_escaped}':fontsize=40:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2",
-            '-q:v', '2', output_path
-        ]
-
-        # Strategy 5: Last resort - just copy image (no text)
-        cmd5 = ['ffmpeg', '-y', '-i', input_path, '-q:v', '2', output_path]
-
-        strategies = [
-            ("with box and border", cmd1),
-            ("with simple box", cmd2),
-            ("minimal text only", cmd3),
-            ("ultra-safe mode", cmd4),
-            ("no text (copy only)", cmd5)
-        ]
-
-        for strategy_name, cmd in strategies:
-            try:
-                result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-                if strategy_name != "with box and border":
-                    print(f"⚠️ Using fallback strategy: {strategy_name}")
-                return  # Success!
-            except subprocess.CalledProcessError as e:
-                stderr_msg = e.stderr[:200] if e.stderr else 'No error details'
-                print(f"⚠️ Strategy '{strategy_name}' failed")
-                if "Invalid" in stderr_msg or "Unknown" in stderr_msg:
-                    print(f"   Error hint: {stderr_msg}")
-                continue
-            except Exception as e:
-                print(f"⚠️ Strategy '{strategy_name}' exception: {str(e)[:100]}")
-                continue
-
-        # If all strategies fail, raise error
-        print("❌ All text overlay strategies exhausted!")
-        raise Exception("All text overlay strategies failed")
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as e:
+            # Single fallback: copy image without text
+            print(f"   ⚠️ Text overlay failed for this image, copying without text")
+            subprocess.run(['ffmpeg', '-y', '-i', input_path, '-q:v', '2', output_path], check=True, capture_output=True)
 
     def _create_video_with_transitions(self, image_files: list, music_path: str,
                                        output_path: str, duration_per_image: float,
-                                       total_duration: int, transitions: list):
+                                       total_duration: int):
         """Create video with dynamic Ken Burns zoom effect to look like a real Reel"""
         temp_dir = os.path.dirname(image_files[0])
 
