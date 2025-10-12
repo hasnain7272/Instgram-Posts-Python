@@ -30,26 +30,13 @@ jobs:
           python-version: '3.11'
       - run: pip install google-generativeai requests pillow
       
-      # - name: Download and install ffmpeg
-      #   run: |
-      #     mkdir -p $HOME/bin
-      #     curl -L https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz -o ffmpeg.tar.xz
-      #     tar -xf ffmpeg.tar.xz
-      #     mv ffmpeg-*-amd64-static/ffmpeg $HOME/bin/
-      #     echo "$HOME/bin" >> $GITHUB_PATH
-      #     ffmpeg -version
-
-      - name: Download and install latest ffmpeg
+      - name: Download and install ffmpeg
         run: |
           mkdir -p $HOME/bin
-          LATEST_FFMPEG_URL=$(curl -s https://api.github.com/repos/ffmpeg/ffmpeg/releases/latest | jq -r '.assets[] | select(.name | test("ffmpeg-release.*amd64-static.tar.xz")) | .browser_download_url')
-          curl -L $LATEST_FFMPEG_URL -o ffmpeg.tar.xz
+          curl -L https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz -o ffmpeg.tar.xz
           tar -xf ffmpeg.tar.xz
-          ls -l ffmpeg-*-amd64-static/
           mv ffmpeg-*-amd64-static/ffmpeg $HOME/bin/
           echo "$HOME/bin" >> $GITHUB_PATH
-          rm ffmpeg.tar.xz
-          ffmpeg -version
 
       - name: Set Random Niche for Scheduled Runs
         if: github.event_name == 'schedule'
