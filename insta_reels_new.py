@@ -117,7 +117,7 @@ class TrulyAIReelGenerator:
 
     def _generate_ai_complete_package(self, niche: str, count: int, duration: int) -> dict:
         """AI generates complete video package with FFmpeg-ready instructions"""
-        
+
         prompt = f"""You are a professional video editor and Instagram content creator. Design a complete {duration}-second Reel with {count} clips for the niche: {niche}.
 
 For EACH clip, provide detailed FFmpeg-compatible specifications:
@@ -189,11 +189,11 @@ Return ONLY this JSON (no markdown):
                     },
                     timeout=30
                 )
-                
+
                 if response.status_code == 200:
                     json_str = response.json()['choices'][0]['message']['content'].strip()
                     print("✅ OpenAI design complete")
-                    
+
             except Exception as e:
                 print(f"⚠️ OpenAI failed: {str(e)[:100]}")
 
@@ -220,7 +220,7 @@ Return ONLY this JSON (no markdown):
                 for clip in data['clips'][:count]:
                     # Clean text (CRITICAL)
                     clip['text_overlay'] = ''.join(c for c in clip.get('text_overlay', 'Text') if c.isalnum() or c.isspace()).strip()[:25]
-                    
+
                     # Validate enums
                     if clip.get('text_position') not in ['top', 'center', 'bottom']:
                         clip['text_position'] = 'center'
@@ -232,7 +232,7 @@ Return ONLY this JSON (no markdown):
                         clip['zoom_effect'] = 'zoom_in'
                     if clip.get('transition') not in ['fade', 'slide', 'dissolve']:
                         clip['transition'] = 'fade'
-                    
+
                     # Clamp text size
                     clip['text_size'] = max(35, min(int(clip.get('text_size', 50)), 60))
                     clip['hook_score'] = clip.get('hook_score', 5)
@@ -278,7 +278,7 @@ Return ONLY this JSON (no markdown):
                 return music_path
         except:
             pass
-        
+
         return self._generate_silent_audio()
 
     def _generate_image(self, prompt: str) -> str:
@@ -312,61 +312,85 @@ Return ONLY this JSON (no markdown):
 
     def _create_ai_driven_video(self, images: list, clips: list, music_path: str,
                                 output_path: str, duration_per: float, total: int):
-        """Create video with AI-designed effects per clip"""
+        """Create video with AI-designed effects per clip - FIXED FILTER CHAIN"""
         temp_dir = os.path.dirname(images[0])
 
         # Process each clip with AI specs
         video_clips = []
         for i, (img, clip) in enumerate(zip(images, clips)):
             clip_path = f"{temp_dir}/clip_{i:03d}.mp4"
-            
+
             print(f"🎬 Clip {i+1}: '{clip['text_overlay']}' | {clip['zoom_effect']} | {clip['transition']}")
-            
-            # Build FFmpeg filter based on AI design
-            filters = []
-            
-            # 1. Add text overlay (AI-designed)
+
+            # Build filter chain in correct order (like working example)
+            filter_parts = []
+
+            # 1. ZOOM/PAN EFFECT FIRST (this scales/positions the image)
+            zoom_filter = self._build_zoom_filter(clip['zoom_effect'], duration_per)
+            filter_parts.append(zoom_filter)
+
+            # 2. TEXT OVERLAY SECOND (applies on top of zoomed image)
             text_filter = self._build_text_filter(clip)
             if text_filter:
-                filters.append(text_filter)
-            
-            # 2. Add zoom/pan effect (AI-chosen)
-            zoom_filter = self._build_zoom_filter(clip['zoom_effect'], duration_per)
-            filters.append(zoom_filter)
-            
-            # 3. Add transition effect (AI-chosen)
+                filter_parts.append(text_filter)
+
+            # 3. TRANSITION EFFECTS (fade in/out)
             transition_filter = self._build_transition_filter(clip['transition'], duration_per)
-            filters.append(transition_filter)
-            
-            # Combine all filters
-            vf = ','.join(filters) + ',format=yuv420p'
-            
+            if transition_filter:
+                filter_parts.append(transition_filter)
+
+            # 4. FORMAT (always last)
+            filter_parts.append('format=yuv420p')
+
+            # Combine all filters with commas (CRITICAL: single string)
+            vf_chain = ','.join(filter_parts)
+
+            # Build command exactly like working example
             cmd = [
                 'ffmpeg', '-y',
-                '-loop', '1', '-i', img,
-                '-vf', vf,
+                '-loop', '1',
                 '-t', str(duration_per),
-                '-r', '30',
+                '-i', img,
+                '-vf', vf_chain,  # Single -vf argument with complete chain
                 '-c:v', 'libx264',
                 '-preset', 'medium',
                 '-crf', '20',
+                '-pix_fmt', 'yuv420p',
+                '-r', '30',
                 clip_path
             ]
-            
+
+            print(f"   Filter: {vf_chain[:100]}...")  # Debug output
+
             try:
-                subprocess.run(cmd, check=True, capture_output=True, text=True)
+                result = subprocess.run(cmd, check=True, capture_output=True, text=True)
                 video_clips.append(clip_path)
+                print(f"   ✅ Clip {i+1} created successfully")
             except subprocess.CalledProcessError as e:
-                print(f"   ⚠️ Complex filter failed, using simple version")
-                # Simplified fallback for this clip
-                simple_vf = f"{zoom_filter},format=yuv420p"
+                print(f"   ⚠️ FFmpeg error for clip {i+1}:")
+                print(f"   STDERR: {e.stderr[-500:]}")  # Show last 500 chars of error
+                
+                # Fallback: super simple filter
+                print(f"   🔄 Trying simple fallback...")
+                simple_vf = f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,format=yuv420p"
+                
                 cmd_simple = [
-                    'ffmpeg', '-y', '-loop', '1', '-i', img,
-                    '-vf', simple_vf, '-t', str(duration_per),
-                    '-r', '30', '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', clip_path
+                    'ffmpeg', '-y',
+                    '-loop', '1',
+                    '-t', str(duration_per),
+                    '-i', img,
+                    '-vf', simple_vf,
+                    '-c:v', 'libx264',
+                    '-preset', 'fast',
+                    '-crf', '23',
+                    '-pix_fmt', 'yuv420p',
+                    '-r', '30',
+                    clip_path
                 ]
-                subprocess.run(cmd_simple, check=True, capture_output=True)
+                
+                subprocess.run(cmd_simple, check=True, capture_output=True, text=True)
                 video_clips.append(clip_path)
+                print(f"   ✅ Fallback succeeded")
 
         # Concatenate all clips with music
         concat_file = f"{temp_dir}/concat.txt"
@@ -376,70 +400,103 @@ Return ONLY this JSON (no markdown):
 
         cmd = [
             'ffmpeg', '-y',
-            '-f', 'concat', '-safe', '0', '-i', concat_file,
+            '-f', 'concat',
+            '-safe', '0',
+            '-i', concat_file,
             '-i', music_path,
-            '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k',
-            '-shortest', '-t', str(total), output_path
+            '-c:v', 'copy',
+            '-c:a', 'aac',
+            '-b:a', '192k',
+            '-shortest',
+            '-t', str(total),
+            output_path
         ]
+        
         subprocess.run(cmd, check=True, capture_output=True)
+        print(f"✅ Final video assembled: {output_path}")
 
     def _build_text_filter(self, clip: dict) -> str:
-        """Build FFmpeg text filter from AI design"""
+        """Build FFmpeg text filter - FIXED escaping"""
         text = clip['text_overlay']
         if not text or len(text) < 2:
             return None
-        
-        # Position
+
+        # Escape single quotes for FFmpeg
+        text_escaped = text.replace("'", "\\'")
+
+        # Position mapping
         pos_map = {
             'top': 'x=(w-text_w)/2:y=100',
             'center': 'x=(w-text_w)/2:y=(h-text_h)/2',
             'bottom': 'x=(w-text_w)/2:y=h-text_h-100'
         }
-        pos = pos_map[clip['text_position']]
-        
-        # Color
+        pos = pos_map.get(clip['text_position'], 'x=(w-text_w)/2:y=(h-text_h)/2')
+
+        # Color mapping
         color_map = {
-            'white': 'white', 'yellow': 'yellow', 
-            'red': 'red', 'cyan': 'cyan', 'green': 'green'
+            'white': 'white',
+            'yellow': 'yellow',
+            'red': 'red',
+            'cyan': 'cyan',
+            'green': 'green'
         }
-        color = color_map[clip['text_color']]
-        
+        color = color_map.get(clip['text_color'], 'white')
+
         size = clip['text_size']
-        
-        # Style
+
+        # Build drawtext filter based on style (like working example)
         if clip['text_style'] == 'box':
-            return f"drawtext=text='{text}':fontsize={size}:fontcolor={color}:{pos}:box=1:boxcolor=black@0.5:boxborderw=8"
+            return f"drawtext=text='{text_escaped}':fontsize={size}:fontcolor={color}:{pos}:box=1:boxcolor=black@0.7:boxborderw=5"
         elif clip['text_style'] == 'shadow':
-            return f"drawtext=text='{text}':fontsize={size}:fontcolor={color}:{pos}:shadowcolor=black:shadowx=2:shadowy=2"
+            return f"drawtext=text='{text_escaped}':fontsize={size}:fontcolor={color}:{pos}:shadowcolor=black:shadowx=3:shadowy=3"
         else:  # plain
-            return f"drawtext=text='{text}':fontsize={size}:fontcolor={color}:{pos}"
+            return f"drawtext=text='{text_escaped}':fontsize={size}:fontcolor={color}:{pos}"
 
     def _build_zoom_filter(self, effect: str, duration: float) -> str:
-        """Build FFmpeg zoom/pan filter from AI choice"""
-        d = int(30 * duration)
+        """Build FFmpeg zoom/pan filter - FIXED for proper duration"""
+        # Calculate frames (30 fps)
+        frames = int(30 * duration)
         
+        # IMPORTANT: Use output resolution (1080x1920 for portrait)
+        output_res = "s=1080x1920"
+
         if effect == 'zoom_in':
-            return f"zoompan=z='min(zoom+0.002,1.3)':d={d}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920"
+            # Zoom from 1.0 to 1.5 smoothly (like working example)
+            return f"zoompan=z='if(gte(zoom,1.5),1.5,zoom+0.05)':{output_res}:d={frames}"
+        
         elif effect == 'zoom_out':
-            return f"zoompan=z='if(lte(zoom,1.0),1.3,max(1.0,zoom-0.002))':d={d}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920"
+            # Zoom from 1.5 to 1.0
+            return f"zoompan=z='if(lte(zoom,1.0),1.0,zoom-0.05)':{output_res}:d={frames}"
+        
         elif effect == 'pan_left':
-            return f"zoompan=z='1.2':d={d}:x='if(gte(on,1),x-2,iw/2)':y='ih/2-(ih/zoom/2)':s=1080x1920"
+            # Pan from right to left
+            return f"zoompan=z='1.2':x='if(gte(on,1),x+3,0)':y='ih/2-(ih/zoom/2)':{output_res}:d={frames}"
+        
         elif effect == 'pan_right':
-            return f"zoompan=z='1.2':d={d}:x='if(gte(on,1),x+2,0)':y='ih/2-(ih/zoom/2)':s=1080x1920"
+            # Pan from left to right
+            return f"zoompan=z='1.2':x='if(gte(on,1),x-3,iw/2)':y='ih/2-(ih/zoom/2)':{output_res}:d={frames}"
+        
         else:  # static
+            # Simple scale and crop (no zoom)
             return f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
 
     def _build_transition_filter(self, transition: str, duration: float) -> str:
-        """Build FFmpeg transition filter"""
+        """Build FFmpeg transition filter - simplified"""
+        # Fade duration (0.3 seconds or 1/3 of clip duration, whichever is smaller)
         fade_dur = min(0.3, duration / 3)
-        
+        fade_out_start = duration - fade_dur
+
         if transition == 'fade':
-            return f"fade=t=in:st=0:d={fade_dur},fade=t=out:st={duration-fade_dur}:d={fade_dur}"
-        elif transition == 'slide':
-            # Slide in from right
-            return f"fade=t=in:st=0:d={fade_dur}"
-        else:  # dissolve
-            return f"fade=t=in:st=0:d={fade_dur},fade=t=out:st={duration-fade_dur}:d={fade_dur}"
+            # Fade in at start, fade out at end
+            return f"fade=t=in:st=0:d={fade_dur},fade=t=out:st={fade_out_start}:d={fade_dur}"
+        
+        elif transition == 'dissolve':
+            # Similar to fade but softer
+            return f"fade=t=in:st=0:d={fade_dur}:alpha=1"
+        
+        # For 'slide' or other transitions, return None (not directly supported)
+        # Slide transitions require complex xfade between clips
+        return None
 
 
 class CloudinaryVideoUploader:
