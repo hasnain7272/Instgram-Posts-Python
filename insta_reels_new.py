@@ -68,15 +68,12 @@ class TrulyAIReelGenerator:
         print(f"🎵 Mood: {content_data['mood']}")
         print(f"🎬 Transitions: AI-controlled per clip")
 
-        # Sort by hook score
-        sorted_clips = sorted(content_data['clips'], key=lambda x: x['hook_score'], reverse=True)
-
         # Download music
         music_path = self._download_music(content_data['mood'])
 
-        # Generate images
+        # Generate images (DON'T sort yet - keep in sync with generation)
         image_files = []
-        for i, clip in enumerate(sorted_clips):
+        for i, clip in enumerate(content_data['clips']):
             img_path = f"{temp_dir}/img_{i:03d}.jpg"
 
             if os.path.exists(img_path):
@@ -92,11 +89,19 @@ class TrulyAIReelGenerator:
             image_files.append(img_path)
             time.sleep(0.5)
 
+        # NOW sort clips AND images together by hook score
+        print("📊 Sorting clips by hook score...")
+        clips_with_images = list(zip(content_data['clips'], image_files))
+        clips_with_images_sorted = sorted(clips_with_images, key=lambda x: x[0]['hook_score'], reverse=True)
+        sorted_clips, sorted_images = zip(*clips_with_images_sorted)
+        sorted_clips = list(sorted_clips)
+        sorted_images = list(sorted_images)
+
         # Create AI-controlled video
         video_path = f"{temp_dir}/reel.mp4"
         duration_per_clip = duration / num_images
         self._create_ai_driven_video(
-            image_files,
+            sorted_images,
             sorted_clips,
             music_path,
             video_path,
@@ -119,8 +124,6 @@ class TrulyAIReelGenerator:
         """AI generates complete video package with FFmpeg-ready instructions"""
 
         prompt = f"""You are a professional video editor and Instagram content creator. Design a complete {duration}-second Reel with {count} clips for the niche: {niche}.
-
-15-20 hashtags and trending and catchy caption also.
 
 For EACH clip, provide detailed FFmpeg-compatible specifications:
 
@@ -244,7 +247,6 @@ Return ONLY this JSON (no markdown):
                 raise ValueError("Invalid clips structure")
 
             data['mood'] = data.get('mood', 'upbeat')
-            print(data)
             return data
 
         except Exception as e:
@@ -369,12 +371,15 @@ Return ONLY this JSON (no markdown):
         """Create video with AI-designed effects per clip - FIXED FILTER CHAIN"""
         temp_dir = os.path.dirname(images[0])
 
+        print(f"\n🎞️ Creating video from {len(images)} clips...")
+
         # Process each clip with AI specs
         video_clips = []
         for i, (img, clip) in enumerate(zip(images, clips)):
             clip_path = f"{temp_dir}/clip_{i:03d}.mp4"
 
-            print(f"🎬 Clip {i+1}: '{clip['text_overlay']}' | {clip['zoom_effect']} | {clip['transition']}")
+            print(f"\n🎬 Clip {i+1}/{len(images)}: '{clip['text_overlay']}' | {clip['zoom_effect']} | {clip['transition']}")
+            print(f"   Image: {os.path.basename(img)}")
 
             # If no drawtext support, add text to image first using PIL
             working_img = img
@@ -454,10 +459,15 @@ Return ONLY this JSON (no markdown):
                 print(f"   ✅ Fallback succeeded")
 
         # Concatenate all clips with music
+        print(f"\n🔗 Concatenating {len(video_clips)} clips...")
         concat_file = f"{temp_dir}/concat.txt"
         with open(concat_file, 'w') as f:
             for clip in video_clips:
                 f.write(f"file '{clip}'\n")
+        
+        # Debug: show concat file content
+        with open(concat_file, 'r') as f:
+            print(f"📝 Concat list:\n{f.read()}")
 
         cmd = [
             'ffmpeg', '-y',
@@ -475,6 +485,15 @@ Return ONLY this JSON (no markdown):
         
         subprocess.run(cmd, check=True, capture_output=True)
         print(f"✅ Final video assembled: {output_path}")
+        
+        # Verify final video
+        verify_cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', output_path]
+        try:
+            result = subprocess.run(verify_cmd, capture_output=True, text=True)
+            duration_check = float(result.stdout.strip())
+            print(f"✅ Video duration: {duration_check:.2f}s (expected: {total}s)")
+        except:
+            pass
 
     def _build_text_filter(self, clip: dict) -> str:
         """Build FFmpeg text filter - FIXED escaping"""
