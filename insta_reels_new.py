@@ -244,6 +244,7 @@ Return ONLY this JSON (no markdown):
                 raise ValueError("Invalid clips structure")
 
             data['mood'] = data.get('mood', 'upbeat')
+            print(data)
             return data
 
         except Exception as e:
