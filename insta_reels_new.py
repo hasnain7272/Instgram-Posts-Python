@@ -120,6 +120,8 @@ class TrulyAIReelGenerator:
 
         prompt = f"""You are a professional video editor and Instagram content creator. Design a complete {duration}-second Reel with {count} clips for the niche: {niche}.
 
+15-20 hashtags and trending and catchy caption also.
+
 For EACH clip, provide detailed FFmpeg-compatible specifications:
 
 1. Image prompt (detailed, realistic)
