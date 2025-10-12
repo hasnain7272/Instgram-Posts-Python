@@ -107,7 +107,7 @@ class TrulyAIReelGenerator:
                 continue
 
             print(f"🎨 Generating image {i+1}/{num_images}...")
-            image_data = self._generate_image(clip['prompt'])
+            image_data = self._generate_image(clip['image_prompt'])
 
             with open(img_path, 'wb') as f:
                 f.write(base64.b64decode(image_data))
@@ -307,7 +307,7 @@ class TrulyAIReelGenerator:
             # Absolute minimal fallback
             return {
                 'clips': [{
-                    'prompt': f'{niche} professional scene {i+1}',
+                    'image_prompt': f'{niche} professional scene {i+1}',
                     'hook_score': 5,
                     'text_overlay': f'Scene {i+1}',
                     'text_position': 'center',
