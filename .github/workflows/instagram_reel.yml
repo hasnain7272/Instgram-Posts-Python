@@ -37,7 +37,15 @@ jobs:
           tar -xf ffmpeg.tar.xz
           mv ffmpeg-*-amd64-static/ffmpeg $HOME/bin/
           echo "$HOME/bin" >> $GITHUB_PATH
-  
+          ffmpeg -version
+
+      - name: Set Random Niche for Scheduled Runs
+        if: github.event_name == 'schedule'
+        id: random-niche
+        run: |
+          NICHES=("fitness" "travel" "food" "motivation" "tech" "wellness")
+          echo "niche=${NICHES[$RANDOM % ${#NICHES[@]}]}" >> $GITHUB_OUTPUT
+      
       - name: Generate and Post Reel
         env:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
