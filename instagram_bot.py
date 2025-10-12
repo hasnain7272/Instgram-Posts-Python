@@ -144,7 +144,7 @@ class PostHistoryManager:
         return False
     
     def get_next_niche(self, history: List[PostMetadata]) -> str:
-        niches = ['fitness', 'motivation', 'food', 'travel', 'lifestyle', 'aesthetic', 'fashion', 'tech', 'hot Sensual indulgence']
+        niches = ['fitness', 'motivation', 'food', 'local travel', 'lifestyle', 'aesthetic', 'fashion', 'tech', 'hot Sensual indulgence']
         recent_niches = [p.engagement_niche for p in history[-8:]]
         
         for niche in niches:
