@@ -611,8 +611,8 @@ def main():
         return
 
     try:
-        niche = os.getenv('REEL_NICHE', 'Motivation')
-        num_images = int(os.getenv('REEL_IMAGES', '20'))
+        niche = os.getenv('REEL_NICHE', 'any niche tranding now')
+        num_images = int(os.getenv('REEL_IMAGES', '5'))
         duration = int(os.getenv('REEL_DURATION', '15'))
 
         print(f"🎯 Niche: {niche}")
