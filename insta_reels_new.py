@@ -310,6 +310,57 @@ Return ONLY this JSON (no markdown):
         subprocess.run(cmd, check=True, capture_output=True)
         return silent_path
 
+    def __init__(self, google_api_key: str = None, openai_api_key: str = None):
+        self.google_api_key = google_api_key
+        self.openai_api_key = openai_api_key
+        self.has_drawtext = self._check_drawtext_support()  # Check FFmpeg capabilities
+
+        if google_api_key:
+            genai.configure(api_key=google_api_key)
+
+        # Music library organized by mood
+        self.music_library = {
+            'energetic': [
+                'https://www.bensound.com/bensound-music/bensound-energy.mp3',
+                'https://www.bensound.com/bensound-music/bensound-highoctane.mp3',
+                'https://www.bensound.com/bensound-music/bensound-epic.mp3',
+            ],
+            'calm': [
+                'https://www.bensound.com/bensound-music/bensound-relaxing.mp3',
+                'https://www.bensound.com/bensound-music/bensound-slowmotion.mp3',
+            ],
+            'upbeat': [
+                'https://www.bensound.com/bensound-music/bensound-sunny.mp3',
+                'https://www.bensound.com/bensound-music/bensound-creativeminds.mp3',
+            ],
+            'intense': [
+                'https://www.bensound.com/bensound-music/bensound-epic.mp3',
+            ],
+            'chill': [
+                'https://www.bensound.com/bensound-music/bensound-jazzyfrenchy.mp3',
+                'https://www.bensound.com/bensound-music/bensound-cute.mp3',
+            ]
+        }
+
+    def _check_drawtext_support(self) -> bool:
+        """Check if FFmpeg has drawtext filter support"""
+        try:
+            result = subprocess.run(
+                ['ffmpeg', '-filters'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            has_support = 'drawtext' in result.stdout
+            if has_support:
+                print("✅ FFmpeg has drawtext support")
+            else:
+                print("⚠️ FFmpeg missing drawtext - text overlays will use PIL")
+            return has_support
+        except:
+            print("⚠️ Could not check FFmpeg filters - assuming no drawtext")
+            return False
+
     def _create_ai_driven_video(self, images: list, clips: list, music_path: str,
                                 output_path: str, duration_per: float, total: int):
         """Create video with AI-designed effects per clip - FIXED FILTER CHAIN"""
@@ -322,19 +373,26 @@ Return ONLY this JSON (no markdown):
 
             print(f"🎬 Clip {i+1}: '{clip['text_overlay']}' | {clip['zoom_effect']} | {clip['transition']}")
 
-            # Build filter chain in correct order (like working example)
+            # If no drawtext support, add text to image first using PIL
+            working_img = img
+            if not self.has_drawtext and clip['text_overlay']:
+                working_img = f"{temp_dir}/img_text_{i:03d}.jpg"
+                self._add_text_with_pil(img, working_img, clip)
+
+            # Build filter chain WITHOUT drawtext (since we handle it with PIL)
             filter_parts = []
 
-            # 1. ZOOM/PAN EFFECT FIRST (this scales/positions the image)
+            # 1. ZOOM/PAN EFFECT FIRST
             zoom_filter = self._build_zoom_filter(clip['zoom_effect'], duration_per)
             filter_parts.append(zoom_filter)
 
-            # 2. TEXT OVERLAY SECOND (applies on top of zoomed image)
-            text_filter = self._build_text_filter(clip)
-            if text_filter:
-                filter_parts.append(text_filter)
+            # 2. TEXT OVERLAY (only if FFmpeg supports it)
+            if self.has_drawtext:
+                text_filter = self._build_text_filter(clip)
+                if text_filter:
+                    filter_parts.append(text_filter)
 
-            # 3. TRANSITION EFFECTS (fade in/out)
+            # 3. TRANSITION EFFECTS
             transition_filter = self._build_transition_filter(clip['transition'], duration_per)
             if transition_filter:
                 filter_parts.append(transition_filter)
@@ -342,16 +400,16 @@ Return ONLY this JSON (no markdown):
             # 4. FORMAT (always last)
             filter_parts.append('format=yuv420p')
 
-            # Combine all filters with commas (CRITICAL: single string)
+            # Combine all filters
             vf_chain = ','.join(filter_parts)
 
-            # Build command exactly like working example
+            # Build command
             cmd = [
                 'ffmpeg', '-y',
                 '-loop', '1',
                 '-t', str(duration_per),
-                '-i', img,
-                '-vf', vf_chain,  # Single -vf argument with complete chain
+                '-i', working_img,
+                '-vf', vf_chain,
                 '-c:v', 'libx264',
                 '-preset', 'medium',
                 '-crf', '20',
@@ -360,7 +418,7 @@ Return ONLY this JSON (no markdown):
                 clip_path
             ]
 
-            print(f"   Filter: {vf_chain[:100]}...")  # Debug output
+            print(f"   Filter: {vf_chain[:100]}...")
 
             try:
                 result = subprocess.run(cmd, check=True, capture_output=True, text=True)
@@ -368,9 +426,9 @@ Return ONLY this JSON (no markdown):
                 print(f"   ✅ Clip {i+1} created successfully")
             except subprocess.CalledProcessError as e:
                 print(f"   ⚠️ FFmpeg error for clip {i+1}:")
-                print(f"   STDERR: {e.stderr[-500:]}")  # Show last 500 chars of error
+                print(f"   STDERR: {e.stderr[-500:]}")
                 
-                # Fallback: super simple filter
+                # Fallback: super simple filter without any text
                 print(f"   🔄 Trying simple fallback...")
                 simple_vf = f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,format=yuv420p"
                 
@@ -378,7 +436,7 @@ Return ONLY this JSON (no markdown):
                     'ffmpeg', '-y',
                     '-loop', '1',
                     '-t', str(duration_per),
-                    '-i', img,
+                    '-i', working_img,
                     '-vf', simple_vf,
                     '-c:v', 'libx264',
                     '-preset', 'fast',
@@ -497,6 +555,94 @@ Return ONLY this JSON (no markdown):
         # For 'slide' or other transitions, return None (not directly supported)
         # Slide transitions require complex xfade between clips
         return None
+
+    def _add_text_with_pil(self, input_img: str, output_img: str, clip: dict):
+        """Add text overlay using PIL (Pillow) as fallback for FFmpeg drawtext"""
+        try:
+            from PIL import Image, ImageDraw, ImageFont
+            
+            # Open image
+            img = Image.open(input_img)
+            draw = ImageDraw.Draw(img)
+            
+            text = clip['text_overlay']
+            size = clip['text_size']
+            color = clip['text_color']
+            position = clip['text_position']
+            style = clip['text_style']
+            
+            # Color mapping
+            color_map = {
+                'white': (255, 255, 255),
+                'yellow': (255, 255, 0),
+                'red': (255, 0, 0),
+                'cyan': (0, 255, 255),
+                'green': (0, 255, 0)
+            }
+            text_color = color_map.get(color, (255, 255, 255))
+            
+            # Try to load a bold font, fallback to default
+            try:
+                font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", size)
+            except:
+                try:
+                    font = ImageFont.truetype("arial.ttf", size)
+                except:
+                    font = ImageFont.load_default()
+            
+            # Get text bounding box
+            bbox = draw.textbbox((0, 0), text, font=font)
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
+            
+            # Calculate position
+            img_width, img_height = img.size
+            if position == 'top':
+                x = (img_width - text_width) // 2
+                y = 100
+            elif position == 'bottom':
+                x = (img_width - text_width) // 2
+                y = img_height - text_height - 100
+            else:  # center
+                x = (img_width - text_width) // 2
+                y = (img_height - text_height) // 2
+            
+            # Draw text with style
+            if style == 'box':
+                # Draw background box
+                padding = 10
+                box_coords = [
+                    x - padding,
+                    y - padding,
+                    x + text_width + padding,
+                    y + text_height + padding
+                ]
+                draw.rectangle(box_coords, fill=(0, 0, 0, 180))
+                draw.text((x, y), text, font=font, fill=text_color)
+                
+            elif style == 'shadow':
+                # Draw shadow
+                shadow_offset = 3
+                draw.text((x + shadow_offset, y + shadow_offset), text, font=font, fill=(0, 0, 0))
+                draw.text((x, y), text, font=font, fill=text_color)
+                
+            else:  # plain
+                draw.text((x, y), text, font=font, fill=text_color)
+            
+            # Save
+            img.save(output_img, quality=95)
+            print(f"   📝 Text added with PIL: '{text}'")
+            
+        except ImportError:
+            print(f"   ⚠️ PIL not installed - text overlay skipped")
+            # Just copy the original image
+            import shutil
+            shutil.copy(input_img, output_img)
+        except Exception as e:
+            print(f"   ⚠️ PIL text overlay failed: {e}")
+            # Just copy the original image
+            import shutil
+            shutil.copy(input_img, output_img)
 
 
 class CloudinaryVideoUploader:
