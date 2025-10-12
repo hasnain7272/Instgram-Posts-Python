@@ -415,6 +415,7 @@ Return ONLY this JSON (no markdown):
             cmd = [
                 'ffmpeg', '-y',
                 '-loop', '1',
+                '-framerate', '30',  # Input framerate
                 '-t', str(duration_per),
                 '-i', working_img,
                 '-vf', vf_chain,
@@ -422,7 +423,8 @@ Return ONLY this JSON (no markdown):
                 '-preset', 'medium',
                 '-crf', '20',
                 '-pix_fmt', 'yuv420p',
-                '-r', '30',
+                '-r', '30',  # Output framerate
+                '-vsync', 'cfr',  # Constant frame rate
                 clip_path
             ]
 
@@ -431,7 +433,16 @@ Return ONLY this JSON (no markdown):
             try:
                 result = subprocess.run(cmd, check=True, capture_output=True, text=True)
                 video_clips.append(clip_path)
-                print(f"   ✅ Clip {i+1} created successfully")
+                
+                # Verify clip duration
+                verify_cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', clip_path]
+                try:
+                    verify_result = subprocess.run(verify_cmd, capture_output=True, text=True)
+                    clip_duration = float(verify_result.stdout.strip())
+                    print(f"   ✅ Clip {i+1} created successfully ({clip_duration:.2f}s)")
+                except:
+                    print(f"   ✅ Clip {i+1} created successfully")
+                    
             except subprocess.CalledProcessError as e:
                 print(f"   ⚠️ FFmpeg error for clip {i+1}:")
                 print(f"   STDERR: {e.stderr[-500:]}")
@@ -443,6 +454,7 @@ Return ONLY this JSON (no markdown):
                 cmd_simple = [
                     'ffmpeg', '-y',
                     '-loop', '1',
+                    '-framerate', '30',
                     '-t', str(duration_per),
                     '-i', working_img,
                     '-vf', simple_vf,
@@ -451,6 +463,7 @@ Return ONLY this JSON (no markdown):
                     '-crf', '23',
                     '-pix_fmt', 'yuv420p',
                     '-r', '30',
+                    '-vsync', 'cfr',
                     clip_path
                 ]
                 
@@ -469,29 +482,54 @@ Return ONLY this JSON (no markdown):
         with open(concat_file, 'r') as f:
             print(f"📝 Concat list:\n{f.read()}")
 
-        cmd = [
+        # First, concatenate video clips WITHOUT music (to ensure proper duration)
+        video_only_path = f"{temp_dir}/video_only.mp4"
+        concat_cmd = [
             'ffmpeg', '-y',
             '-f', 'concat',
             '-safe', '0',
             '-i', concat_file,
+            '-c:v', 'libx264',  # Re-encode instead of copy for consistency
+            '-preset', 'fast',
+            '-crf', '23',
+            '-pix_fmt', 'yuv420p',
+            video_only_path
+        ]
+        
+        print("🎬 Concatenating video clips...")
+        subprocess.run(concat_cmd, check=True, capture_output=True)
+        
+        # Verify concatenated video duration
+        verify_cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', video_only_path]
+        try:
+            result = subprocess.run(verify_cmd, capture_output=True, text=True)
+            actual_duration = float(result.stdout.strip())
+            print(f"📏 Concatenated video duration: {actual_duration:.2f}s (expected: {total}s)")
+        except:
+            pass
+
+        # Now add music and trim to exact duration
+        final_cmd = [
+            'ffmpeg', '-y',
+            '-i', video_only_path,
             '-i', music_path,
+            '-t', str(total),  # Exact duration
             '-c:v', 'copy',
             '-c:a', 'aac',
             '-b:a', '192k',
             '-shortest',
-            '-t', str(total),
             output_path
         ]
         
-        subprocess.run(cmd, check=True, capture_output=True)
+        print("🎵 Adding music...")
+        subprocess.run(final_cmd, check=True, capture_output=True)
         print(f"✅ Final video assembled: {output_path}")
         
         # Verify final video
-        verify_cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', output_path]
         try:
-            result = subprocess.run(verify_cmd, capture_output=True, text=True)
+            result = subprocess.run(verify_cmd[:-1] + [output_path], capture_output=True, text=True)
             duration_check = float(result.stdout.strip())
-            print(f"✅ Video duration: {duration_check:.2f}s (expected: {total}s)")
+            print(f"✅ Final video duration: {duration_check:.2f}s (target: {total}s)")
         except:
             pass
 
@@ -541,20 +579,21 @@ Return ONLY this JSON (no markdown):
         output_res = "s=1080x1920"
 
         if effect == 'zoom_in':
-            # Zoom from 1.0 to 1.5 smoothly (like working example)
-            return f"zoompan=z='if(gte(zoom,1.5),1.5,zoom+0.05)':{output_res}:d={frames}"
+            # Zoom from 1.0 to 1.5 smoothly
+            # CRITICAL: Use frames-1 to ensure exact duration
+            return f"zoompan=z='min(1.0+zoom*0.002,1.5)':d={frames}:{output_res}:fps=30"
         
         elif effect == 'zoom_out':
             # Zoom from 1.5 to 1.0
-            return f"zoompan=z='if(lte(zoom,1.0),1.0,zoom-0.05)':{output_res}:d={frames}"
+            return f"zoompan=z='max(1.5-on*0.002,1.0)':d={frames}:{output_res}:fps=30"
         
         elif effect == 'pan_left':
             # Pan from right to left
-            return f"zoompan=z='1.2':x='if(gte(on,1),x+3,0)':y='ih/2-(ih/zoom/2)':{output_res}:d={frames}"
+            return f"zoompan=z='1.2':x='iw/2-(iw/zoom/2)+on*2':y='ih/2-(ih/zoom/2)':d={frames}:{output_res}:fps=30"
         
         elif effect == 'pan_right':
             # Pan from left to right
-            return f"zoompan=z='1.2':x='if(gte(on,1),x-3,iw/2)':y='ih/2-(ih/zoom/2)':{output_res}:d={frames}"
+            return f"zoompan=z='1.2':x='iw/2-(iw/zoom/2)-on*2':y='ih/2-(ih/zoom/2)':d={frames}:{output_res}:fps=30"
         
         else:  # static
             # Simple scale and crop (no zoom)
