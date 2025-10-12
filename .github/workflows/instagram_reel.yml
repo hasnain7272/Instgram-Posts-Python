@@ -39,6 +39,18 @@ jobs:
       #     echo "$HOME/bin" >> $GITHUB_PATH
       #     ffmpeg -version
 
+      - name: Download and install latest ffmpeg
+        run: |
+          mkdir -p $HOME/bin
+          LATEST_FFMPEG_URL=$(curl -s https://api.github.com/repos/ffmpeg/ffmpeg/releases/latest | jq -r '.assets[] | select(.name | test("ffmpeg-release.*amd64-static.tar.xz")) | .browser_download_url')
+          curl -L $LATEST_FFMPEG_URL -o ffmpeg.tar.xz
+          tar -xf ffmpeg.tar.xz
+          ls -l ffmpeg-*-amd64-static/
+          mv ffmpeg-*-amd64-static/ffmpeg $HOME/bin/
+          echo "$HOME/bin" >> $GITHUB_PATH
+          rm ffmpeg.tar.xz
+          ffmpeg -version
+
       - name: Set Random Niche for Scheduled Runs
         if: github.event_name == 'schedule'
         id: random-niche
