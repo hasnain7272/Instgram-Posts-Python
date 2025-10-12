@@ -151,67 +151,67 @@ class TrulyAIReelGenerator:
 
         prompt = f"""You are an expert Instagram content creator and professional video editor specializing in short-form video (Reels). Your task is to design a complete, engaging {duration}-second Instagram Reel comprised of exactly {count} distinct video clips for the niche: {niche}.
 
-Each clip should contribute to a cohesive and viral-worthy narrative.
+        Each clip should contribute to a cohesive and viral-worthy narrative.
 
-For EACH of the {count} clips, provide detailed specifications in a structured JSON format. These specifications will be directly used to generate a video using FFmpeg and image generation tools.
+        For EACH of the {count} clips, provide detailed specifications in a structured JSON format. These specifications will be directly used to generate a video using FFmpeg and image generation tools.
 
-Here are the required specifications for each clip:
+        Here are the required specifications for each clip:
 
-1.  **image_prompt**: A highly detailed, visually rich, and realistic description for generating a single high-quality image. Focus on professional aesthetics, vibrant colors, and 4K quality. (e.g., "Photorealistic shot of a person meditating peacefully on a mountaintop at sunrise, with warm golden light, mist, serene atmosphere, ultra detailed, 4K")
-2.  **hook_score**: An integer from 1 to 10, indicating how engaging or "scroll-stopping" the clip is. Higher scores (8-10) should be reserved for the most impactful visuals and text, as these clips will appear earlier in the reel.
-3.  **text_overlay**: A short, impactful overlay text (2-4 words maximum). It MUST contain ONLY alphanumeric characters (A-Z, a-z, 0-9) and spaces. No special characters (!@#$%&*) allowed. This text should add context or a call-to-action to the visual.
-4.  **text_position**: Position of the text overlay. Choose from: "top", "center", "bottom".
-5.  **text_color**: Color of the text. Choose from: "white", "yellow", "red", "cyan", "green".
-6.  **text_size**: Font size for the text, an integer between 40 and 60 (pixels).
-7.  **text_style**: Visual style of the text. Choose from: "plain", "box", "shadow".
-8.  **motion_effect**: A dynamic motion effect to apply to the image within its duration. Choose from: "zoom_in", "zoom_out", "pan_left", "pan_right", "static" (for no motion). Ensure variety across clips.
-9.  **clip_fade**: Controls how this individual clip appears and disappears.
-    *   **"fade_in_out"**: The clip will smoothly fade in at its start and fade out at its end. (Recommended for most clips for smooth flow)
-    *   **"fade_in"**: The clip will only fade in at its start.
-    *   **"fade_out"**: The clip will only fade out at its end.
-    *   **"none"**: No fade effect for this clip.
+        1.  **image_prompt**: A highly detailed, visually rich, and realistic description for generating a single high-quality image. Focus on professional aesthetics, vibrant colors, and 4K quality. (e.g., "Photorealistic shot of a person meditating peacefully on a mountaintop at sunrise, with warm golden light, mist, serene atmosphere, ultra detailed, 4K")
+        2.  **hook_score**: An integer from 1 to 10, indicating how engaging or "scroll-stopping" the clip is. Higher scores (8-10) should be reserved for the most impactful visuals and text, as these clips will appear earlier in the reel.
+        3.  **text_overlay**: A short, impactful overlay text (2-4 words maximum). It MUST contain ONLY alphanumeric characters (A-Z, a-z, 0-9) and spaces. No special characters (!@#$%&*) allowed. This text should add context or a call-to-action to the visual.
+        4.  **text_position**: Position of the text overlay. Choose from: "top", "center", "bottom".
+        5.  **text_color**: Color of the text. Choose from: "white", "yellow", "red", "cyan", "green".
+        6.  **text_size**: Font size for the text, an integer between 40 and 60 (pixels).
+        7.  **text_style**: Visual style of the text. Choose from: "plain", "box", "shadow".
+        8.  **motion_effect**: A dynamic motion effect to apply to the image within its duration. Choose from: "zoom_in", "zoom_out", "pan_left", "pan_right", "static" (for no motion). Ensure variety across clips.
+        9.  **clip_fade**: Controls how this individual clip appears and disappears.
+            *   **"fade_in_out"**: The clip will smoothly fade in at its start and fade out at its end. (Recommended for most clips for smooth flow)
+            *   **"fade_in"**: The clip will only fade in at its start.
+            *   **"fade_out"**: The clip will only fade out at its end.
+            *   **"none"**: No fade effect for this clip.
 
-**Important Design Principles:**
-*   **Visual Variety:** Ensure a diverse range of image prompts, text positions, colors, and motion effects across all clips. Avoid repetition.
-*   **Pacing:** Vary `hook_score` to create dynamic pacing, with high-score clips appearing early.
-*   **Conciseness:** Keep text overlays short and punchy.
-*   **Mood Consistency:** All elements (prompts, text, motion) should align with the overall mood determined by the AI.
+        **Important Design Principles:**
+        *   **Visual Variety:** Ensure a diverse range of image prompts, text positions, colors, and motion effects across all clips. Avoid repetition.
+        *   **Pacing:** Vary `hook_score` to create dynamic pacing, with high-score clips appearing early.
+        *   **Conciseness:** Keep text overlays short and punchy.
+        *   **Mood Consistency:** All elements (prompts, text, motion) should align with the overall mood determined by the AI.
 
-**Return ONLY a single, valid JSON object (no markdown, no explanations, no comments outside of strings).** The JSON structure must strictly follow the example below.
+        **Return ONLY a single, valid JSON object (no markdown, no explanations, no comments outside of strings).** The JSON structure must strictly follow the example below.
 
-**Example JSON Structure (adhere to this exactly):**
-```json
-{
-  "clips": [
-    {
-      "image_prompt": "A bustling financial district with skyscrapers reflecting a golden sunset, people in suits walking purposefully, blurred motion, ultra detailed, vibrant, 4K.",
-      "hook_score": 9,
-      "text_overlay": "Unlock Your Potential",
-      "text_position": "top",
-      "text_color": "yellow",
-      "text_size": 55,
-      "text_style": "box",
-      "motion_effect": "zoom_in",
-      "clip_fade": "fade_in_out"
-    },
-    {
-      "image_prompt": "Close-up of a person's hands typing rapidly on a futuristic holographic keyboard, blue light glow, focus on innovation, digital interface, professional, 4K.",
-      "hook_score": 7,
-      "text_overlay": "Future is Now",
-      "text_position": "center",
-      "text_color": "cyan",
-      "text_size": 50,
-      "text_style": "shadow",
-      "motion_effect": "pan_right",
-      "clip_fade": "fade_in_out"
-    }
-    // ... continue for {count} clips ...
-  ],
-  "caption": "A compelling and viral Instagram caption for the reel, including a call-to-action.",
-  "hashtags": ["#YourNiche", "#ViralReels", "#Motivation", "#SuccessMindset", "#Trending"],
-  "mood": "upbeat" // Choose from: "energetic", "calm", "upbeat", "intense", "chill"
-}
-"""
+        **Example JSON Structure (adhere to this exactly):**
+        ```json
+        {{
+          "clips": [
+            {{
+              "image_prompt": "A bustling financial district with skyscrapers reflecting a golden sunset, people in suits walking purposefully, blurred motion, ultra detailed, vibrant, 4K.",
+              "hook_score": 9,
+              "text_overlay": "Unlock Your Potential",
+              "text_position": "top",
+              "text_color": "yellow",
+              "text_size": 55,
+              "text_style": "box",
+              "motion_effect": "zoom_in",
+              "clip_fade": "fade_in_out"
+            }},
+            {{
+              "image_prompt": "Close-up of a person's hands typing rapidly on a futuristic holographic keyboard, blue light glow, focus on innovation, digital interface, professional, 4K.",
+              "hook_score": 7,
+              "text_overlay": "Future is Now",
+              "text_position": "center",
+              "text_color": "cyan",
+              "text_size": 50,
+              "text_style": "shadow",
+              "motion_effect": "pan_right",
+              "clip_fade": "fade_in_out"
+            }}
+            // ... continue for {{count}} clips ...
+          ],
+          "caption": "A compelling and viral Instagram caption for the reel, including a call-to-action.",
+          "hashtags": ["#YourNiche", "#ViralReels", "#Motivation", "#SuccessMindset", "#Trending"],
+          "mood": "upbeat" // Choose from: "energetic", "calm", "upbeat", "intense", "chill"
+        }}
+        """
 
         json_str = None
 
