@@ -560,6 +560,7 @@ def main():
                 break
             else:
                 print(f"⚠️ Content too similar to recent posts, retrying...")
+                break
                 if attempt == max_attempts - 1:
                     raise Exception("Unable to generate original content after multiple attempts")
         
