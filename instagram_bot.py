@@ -219,6 +219,7 @@ class ImageGenerator:
             if response.status_code == 200:
                 base64_image = base64.b64encode(response.content).decode('utf-8')
                 print("✅ Generated with Pollinations.ai")
+                print(base64_image)
                 return base64_image
             else:
                 raise Exception(f"Status code: {response.status_code}")
@@ -421,6 +422,7 @@ class CloudinaryUploader:
         try:
             response = requests.post(url, files=files, data=data, timeout=30)
             response_data = response.json()
+            print(response_data)
             
             if response.status_code != 200 or 'secure_url' not in response_data:
                 error_msg = response_data.get('error', {}).get('message', f'Upload failed: {response.status_code}')
