@@ -548,33 +548,44 @@ class CloudinaryVideoUploader:
     @staticmethod
     def delete_video(cloud_name: str, api_key: str, api_secret: str, public_id: str) -> bool:
         """Delete a video from Cloudinary using Admin API"""
-        import hashlib
         
-        timestamp = int(time.time())
+        # Use HTTP Basic Authentication (correct method for Admin API)
+        auth = (api_key, api_secret)
         
-        # Create signature for deletion
-        string_to_sign = f"public_id={public_id}&timestamp={timestamp}{api_secret}"
-        signature = hashlib.sha1(string_to_sign.encode()).hexdigest()
-        
+        # Delete endpoint
         url = f"https://api.cloudinary.com/v1_1/{cloud_name}/resources/video/upload"
+        
+        # Data payload
         data = {
             'public_ids[]': public_id,
-            'api_key': api_key,
-            'signature': signature,
-            'timestamp': timestamp,
-            'invalidate': True  # Remove from CDN cache
+            'invalidate': True  # Remove from CDN cache immediately
         }
         
         print(f"🗑️ Deleting video: {public_id}")
-        response = requests.delete(url, data=data, timeout=30)
         
-        if response.status_code == 200:
-            print(f"✅ Deleted successfully")
-            return True
-        else:
-            print(f"⚠️ Delete failed: {response.text}")
+        try:
+            response = requests.delete(url, auth=auth, data=data, timeout=30)
+            
+            if response.status_code == 200:
+                result = response.json()
+                deleted_status = result.get('deleted', {}).get(public_id)
+                
+                if deleted_status == 'deleted':
+                    print(f"✅ Deleted successfully")
+                    return True
+                elif deleted_status == 'not_found':
+                    print(f"⚠️ Video not found (may already be deleted)")
+                    return False
+                else:
+                    print(f"⚠️ Unexpected status: {deleted_status}")
+                    return False
+            else:
+                print(f"⚠️ Delete failed (HTTP {response.status_code}): {response.text}")
+                return False
+                
+        except Exception as e:
+            print(f"⚠️ Delete error: {str(e)}")
             return False
-
 
 class InstagramReelPublisher:
     def __init__(self):
@@ -738,7 +749,5 @@ def main():
         raise
 
 
-if __name__ == "__main__":
-    main()
 if __name__ == "__main__":
     main()
