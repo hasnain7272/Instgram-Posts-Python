@@ -515,18 +515,16 @@ class CloudinaryVideoUploader:
         expiration_time = datetime.now() + timedelta(days=expire_days)
         expiration_timestamp = int(expiration_time.timestamp())
         
-        # Add invalidate parameter to ensure deletion
-        params = {
-            'api_key': api_key,
+        # Parameters for signature - use proper format
+        params_for_signature = {
             'timestamp': timestamp,
             'upload_preset': upload_preset,
-            'invalidate': True,  # Ensures immediate removal from CDN
-            'expiration': expiration_timestamp  # Auto-delete timestamp
+            'invalidate': 1,  # Boolean as integer
+            'expiration': expiration_timestamp
         }
         
-        # Create signature
-        filtered = {k: v for k, v in params.items() if k not in {'file', 'cloud_name', 'resource_type', 'api_key'}}
-        string_to_sign = '&'.join(f"{k}={v}" for k, v in sorted(filtered.items())) + api_secret
+        # Create signature string (sorted alphabetically)
+        string_to_sign = '&'.join(f"{k}={v}" for k, v in sorted(params_for_signature.items())) + api_secret
         signature = hashlib.sha1(string_to_sign.encode()).hexdigest()
 
         url = f"https://api.cloudinary.com/v1_1/{cloud_name}/video/upload"
@@ -536,11 +534,13 @@ class CloudinaryVideoUploader:
             'signature': signature,
             'timestamp': timestamp,
             'upload_preset': upload_preset,
-            'invalidate': True,
+            'invalidate': 1,  # Send as integer
             'expiration': expiration_timestamp
         }
 
         print(f"☁️ Uploading with {expire_days}-day expiration...")
+        print(f"🔐 Signature string: {string_to_sign[:-len(api_secret)]}***")
+        
         response = requests.post(url, files=files, data=data, timeout=120)
         response_data = response.json()
 
