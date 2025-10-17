@@ -500,27 +500,19 @@ Return ONLY valid JSON:
 class CloudinaryVideoUploader:
     @staticmethod
     def upload_video(video_base64: str, cloud_name: str, upload_preset: str, 
-                     api_key: str, api_secret: str, expire_days: int = 2) -> str:
-        """Upload video to Cloudinary CDN with auto-deletion
+                     api_key: str, api_secret: str) -> dict:
+        """Upload video to Cloudinary CDN
         
-        Args:
-            expire_days: Number of days after which the video will be auto-deleted (default: 2)
+        Returns dict with 'secure_url' and 'public_id' for later deletion
         """
         import hashlib
-        from datetime import datetime, timedelta
         
         timestamp = int(time.time())
         
-        # Calculate expiration timestamp (2 days from now)
-        expiration_time = datetime.now() + timedelta(days=expire_days)
-        expiration_timestamp = int(expiration_time.timestamp())
-        
-        # Parameters for signature - use proper format
+        # Parameters for signature
         params_for_signature = {
             'timestamp': timestamp,
             'upload_preset': upload_preset,
-            'invalidate': 1,  # Boolean as integer
-            'expiration': expiration_timestamp
         }
         
         # Create signature string (sorted alphabetically)
@@ -534,21 +526,54 @@ class CloudinaryVideoUploader:
             'signature': signature,
             'timestamp': timestamp,
             'upload_preset': upload_preset,
-            'invalidate': 1,  # Send as integer
-            'expiration': expiration_timestamp
         }
 
-        print(f"☁️ Uploading with {expire_days}-day expiration...")
-        print(f"🔐 Signature string: {string_to_sign[:-len(api_secret)]}***")
-        
+        print("☁️ Uploading to Cloudinary...")
         response = requests.post(url, files=files, data=data, timeout=120)
         response_data = response.json()
 
         if response.status_code != 200:
             raise Exception(f"Upload failed: {response_data.get('error', {}).get('message')}")
         
-        print(f"✅ Video will auto-delete on: {expiration_time.strftime('%Y-%m-%d %H:%M:%S')}")
-        return response_data['secure_url']
+        print(f"✅ Uploaded: {response_data['secure_url']}")
+        print(f"📋 Public ID: {response_data['public_id']}")
+        
+        # Return both URL and public_id for potential deletion
+        return {
+            'secure_url': response_data['secure_url'],
+            'public_id': response_data['public_id'],
+            'created_at': response_data.get('created_at')
+        }
+    
+    @staticmethod
+    def delete_video(cloud_name: str, api_key: str, api_secret: str, public_id: str) -> bool:
+        """Delete a video from Cloudinary using Admin API"""
+        import hashlib
+        
+        timestamp = int(time.time())
+        
+        # Create signature for deletion
+        string_to_sign = f"public_id={public_id}&timestamp={timestamp}{api_secret}"
+        signature = hashlib.sha1(string_to_sign.encode()).hexdigest()
+        
+        url = f"https://api.cloudinary.com/v1_1/{cloud_name}/resources/video/upload"
+        data = {
+            'public_ids[]': public_id,
+            'api_key': api_key,
+            'signature': signature,
+            'timestamp': timestamp,
+            'invalidate': True  # Remove from CDN cache
+        }
+        
+        print(f"🗑️ Deleting video: {public_id}")
+        response = requests.delete(url, data=data, timeout=30)
+        
+        if response.status_code == 200:
+            print(f"✅ Deleted successfully")
+            return True
+        else:
+            print(f"⚠️ Delete failed: {response.text}")
+            return False
 
 
 class InstagramReelPublisher:
@@ -651,11 +676,13 @@ def main():
         print(f"⏱️ Duration: {duration}s")
         print("=" * 50)
 
+        # Step 1: Generate Reel
         generator = TrulyAIReelGenerator(google_api_key, openai_api_key)
         reel_data = generator.generate_reel(niche, num_images, duration)
 
+        # Step 2: Upload to Cloudinary
         uploader = CloudinaryVideoUploader()
-        video_url = uploader.upload_video(
+        upload_result = uploader.upload_video(
             reel_data['video_base64'],
             cloudinary_cloud_name,
             cloudinary_upload_preset,
@@ -663,8 +690,13 @@ def main():
             cloudinary_api_secret
         )
 
+        video_url = upload_result['secure_url']
+        public_id = upload_result['public_id']
+        
         print(f"✅ Video: {video_url}")
+        print(f"📋 Public ID: {public_id}")
 
+        # Step 3: Publish to Instagram
         publisher = InstagramReelPublisher()
         full_caption = f"{reel_data['caption']}\n\n{' '.join(reel_data['hashtags'])}"
 
@@ -679,6 +711,26 @@ def main():
         print("🎉 SUCCESS!")
         print(f"📝 Caption: {reel_data['caption']}")
         print(f"🆔 Post: {post_id}")
+        
+        # Step 4: Delete from Cloudinary (after successful Instagram upload)
+        print("=" * 50)
+        print("🧹 Cleaning up Cloudinary...")
+        
+        # Wait a bit to ensure Instagram has processed the video
+        time.sleep(10)
+        
+        delete_success = uploader.delete_video(
+            cloudinary_cloud_name,
+            cloudinary_api_key,
+            cloudinary_api_secret,
+            public_id
+        )
+        
+        if delete_success:
+            print("✅ Video deleted from Cloudinary (Instagram already has it)")
+        else:
+            print("⚠️ Could not delete from Cloudinary (but Instagram post is live)")
+        
         print("=" * 50)
 
     except Exception as e:
@@ -686,5 +738,7 @@ def main():
         raise
 
 
+if __name__ == "__main__":
+    main()
 if __name__ == "__main__":
     main()
