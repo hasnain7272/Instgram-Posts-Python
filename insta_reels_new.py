@@ -71,6 +71,7 @@ class TrulyAIReelGenerator:
                 content_data = json.load(f)
         else:
             content_data = self._generate_ai_complete_package(niche, num_images, duration)
+            print(content_data)
             with open(checkpoint_file, 'w') as f:
                 json.dump(content_data, f)
             print("✅ AI package generated & checkpointed")
