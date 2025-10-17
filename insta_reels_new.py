@@ -498,25 +498,55 @@ Return ONLY valid JSON:
 
 class CloudinaryVideoUploader:
     @staticmethod
-    def upload_video(video_base64: str, cloud_name: str, upload_preset: str, api_key: str, api_secret: str) -> str:
-        """Upload video to Cloudinary CDN"""
+    def upload_video(video_base64: str, cloud_name: str, upload_preset: str, 
+                     api_key: str, api_secret: str, expire_days: int = 2) -> str:
+        """Upload video to Cloudinary CDN with auto-deletion
+        
+        Args:
+            expire_days: Number of days after which the video will be auto-deleted (default: 2)
+        """
         import hashlib
+        from datetime import datetime, timedelta
+        
         timestamp = int(time.time())
-        params = {'api_key': api_key, 'timestamp': timestamp, 'upload_preset': upload_preset}
+        
+        # Calculate expiration timestamp (2 days from now)
+        expiration_time = datetime.now() + timedelta(days=expire_days)
+        expiration_timestamp = int(expiration_time.timestamp())
+        
+        # Add invalidate parameter to ensure deletion
+        params = {
+            'api_key': api_key,
+            'timestamp': timestamp,
+            'upload_preset': upload_preset,
+            'invalidate': True,  # Ensures immediate removal from CDN
+            'expiration': expiration_timestamp  # Auto-delete timestamp
+        }
+        
+        # Create signature
         filtered = {k: v for k, v in params.items() if k not in {'file', 'cloud_name', 'resource_type', 'api_key'}}
         string_to_sign = '&'.join(f"{k}={v}" for k, v in sorted(filtered.items())) + api_secret
         signature = hashlib.sha1(string_to_sign.encode()).hexdigest()
 
         url = f"https://api.cloudinary.com/v1_1/{cloud_name}/video/upload"
         files = {'file': f"data:video/mp4;base64,{video_base64}"}
-        data = {'api_key': api_key, 'signature': signature, 'timestamp': timestamp, 'upload_preset': upload_preset}
+        data = {
+            'api_key': api_key,
+            'signature': signature,
+            'timestamp': timestamp,
+            'upload_preset': upload_preset,
+            'invalidate': True,
+            'expiration': expiration_timestamp
+        }
 
-        print("☁️ Uploading...")
+        print(f"☁️ Uploading with {expire_days}-day expiration...")
         response = requests.post(url, files=files, data=data, timeout=120)
         response_data = response.json()
 
         if response.status_code != 200:
             raise Exception(f"Upload failed: {response_data.get('error', {}).get('message')}")
+        
+        print(f"✅ Video will auto-delete on: {expiration_time.strftime('%Y-%m-%d %H:%M:%S')}")
         return response_data['secure_url']
 
 
