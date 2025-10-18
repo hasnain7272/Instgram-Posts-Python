@@ -10,10 +10,32 @@ import json
 import random
 
 class TrulyAIReelGenerator:
-    def __init__(self, google_api_key: str = None, openai_api_key: str = None):
+    def __init__(self, google_api_key: str = None, openai_api_key: str = None,
+                 cloudinary_cloud_name: str = None, cloudinary_api_key: str = None, 
+                 cloudinary_api_secret: str = None, cloudinary_upload_preset: str = None,
+                 replicate_api_token: str = None, huggingface_api_token: str = None):
         """Initialize AI Reel Generator with comprehensive setup"""
         self.google_api_key = google_api_key
         self.openai_api_key = openai_api_key
+        
+        # Cloudinary credentials (optional for enhancement)
+        self.cloudinary_cloud_name = cloudinary_cloud_name
+        self.cloudinary_api_key = cloudinary_api_key
+        self.cloudinary_api_secret = cloudinary_api_secret
+        self.cloudinary_upload_preset = cloudinary_upload_preset
+        
+        # Image generation API tokens (optional - works without them too)
+        self.replicate_api_token = replicate_api_token
+        self.huggingface_api_token = huggingface_api_token
+        
+        # Check if enhancement is enabled
+        self.enable_enhancement = os.getenv('ENABLE_CLOUDINARY_ENHANCE', 'false').lower() == 'true'
+        if self.enable_enhancement:
+            if all([cloudinary_cloud_name, cloudinary_api_key, cloudinary_api_secret]):
+                print("✨ Cloudinary AI enhancement: ENABLED")
+            else:
+                print("⚠️ Cloudinary AI enhancement disabled (missing credentials)")
+                self.enable_enhancement = False
         
         if google_api_key:
             genai.configure(api_key=google_api_key)
@@ -71,7 +93,6 @@ class TrulyAIReelGenerator:
                 content_data = json.load(f)
         else:
             content_data = self._generate_ai_complete_package(niche, num_images, duration)
-            print(content_data)
             with open(checkpoint_file, 'w') as f:
                 json.dump(content_data, f)
             print("✅ AI package generated & checkpointed")
@@ -91,16 +112,22 @@ class TrulyAIReelGenerator:
                 image_files.append(img_path)
                 continue
 
-            print(f"🎨 Generating image {i+1}/{num_images}...")
+            print(f"\n🎨 Generating image {i+1}/{num_images}...")
             image_data = self._generate_image(clip['image_prompt'])
 
+            # Save original image (SAFETY: always have this)
             with open(img_path, 'wb') as f:
                 f.write(base64.b64decode(image_data))
+            print(f"   💾 Image saved locally: {img_path}")
+            
+            # NEW: Try optional Cloudinary enhancement
+            img_path = self._enhance_image_optional(img_path, temp_dir, i)
+            
             image_files.append(img_path)
             time.sleep(0.5)
 
         # Sort clips AND images together by hook score
-        print("📊 Sorting clips by hook score...")
+        print("\n📊 Sorting clips by hook score...")
         clips_with_images = list(zip(content_data['clips'], image_files))
         clips_with_images_sorted = sorted(clips_with_images, key=lambda x: x[0]['hook_score'], reverse=True)
         sorted_clips, sorted_images = zip(*clips_with_images_sorted)
@@ -112,12 +139,325 @@ class TrulyAIReelGenerator:
         with open(video_path, 'rb') as f:
             video_base64 = base64.b64encode(f.read()).decode()
 
-        print("✅ AI-driven Reel complete!")
+        print("\n✅ AI-driven Reel complete!")
         return {
             'video_base64': video_base64,
             'caption': content_data['caption'],
             'hashtags': content_data['hashtags']
         }
+
+    def _generate_image(self, prompt: str) -> str:
+        """
+        Multi-source image generation with cascading fallback
+        Priority: Replicate → Hugging Face → Pollinations
+        """
+        
+        # Source 1: Try Replicate (Best quality)
+        print("   🔄 Trying Replicate...")
+        try:
+            image_data = self._replicate_generate(prompt)
+            if image_data:
+                print("   ✅ Image generated via Replicate")
+                return image_data
+        except Exception as e:
+            print(f"   ⚠️ Replicate failed: {str(e)[:80]}")
+        
+        # Source 2: Try Hugging Face (Good quality)
+        print("   🔄 Trying Hugging Face...")
+        try:
+            image_data = self._huggingface_generate(prompt)
+            if image_data:
+                print("   ✅ Image generated via Hugging Face")
+                return image_data
+        except Exception as e:
+            print(f"   ⚠️ Hugging Face failed: {str(e)[:80]}")
+        
+        # Source 3: Try Pollinations (Reliable fallback)
+        print("   🔄 Trying Pollinations...")
+        try:
+            image_data = self._pollinations_generate(prompt)
+            if image_data:
+                print("   ✅ Image generated via Pollinations")
+                return image_data
+        except Exception as e:
+            print(f"   ⚠️ Pollinations failed: {str(e)[:80]}")
+        
+        # All sources failed
+        raise Exception("❌ All image generation sources failed")
+
+    def _replicate_generate(self, prompt: str) -> str:
+        """Generate image using Replicate (Flux model) - matches working implementation"""
+        enhanced = f"{prompt}, ultra detailed, professional, vibrant, 4K, high quality"
+        
+        # Check if API token is available
+        if not self.replicate_api_token:
+            raise Exception("Replicate API token required")
+        
+        # The model endpoint for Flux 1.1 Pro
+        model_url = "https://api.replicate.com/v1/models/black-forest-labs/flux-1.1-pro/predictions"
+        
+        # Input data for image generation
+        input_data = {
+            "input": {
+                "prompt": enhanced,
+                "aspect_ratio": "9:16",  # Instagram Reels format
+                "output_format": "jpg",  # Request JPG instead of WebP
+                "output_quality": 90,
+                "prompt_upsampling": True  # Better quality
+            }
+        }
+        
+        # Headers with Authorization token
+        headers = {
+            "Authorization": f"Token {self.replicate_api_token}",
+            "Content-Type": "application/json",
+            "Prefer": "wait",  # Wait for result
+        }
+        
+        # Step 1: Send POST request to create the prediction
+        response = requests.post(model_url, headers=headers, json=input_data, timeout=30)
+        
+        if response.status_code == 201:
+            prediction = response.json()
+            
+            # Get the URL to check status of the prediction
+            prediction_url = prediction.get("urls", {}).get("get")
+            
+            if not prediction_url:
+                raise Exception("No prediction URL returned")
+            
+            # Step 2: Poll the prediction status
+            for attempt in range(12):  # 12 * 5 = 60 seconds max
+                time.sleep(5)  # Wait before checking status
+                status_response = requests.get(prediction_url, headers=headers, timeout=10)
+                
+                if status_response.status_code == 200:
+                    status_data = status_response.json()
+                    status = status_data.get("status")
+                    
+                    if status == "succeeded":
+                        # The image generation succeeded, get the image URL
+                        image_url = status_data.get("output")
+                        
+                        if not image_url:
+                            raise Exception("No output URL in response")
+                        
+                        # If output is a list, take first element
+                        if isinstance(image_url, list) and len(image_url) > 0:
+                            image_url = image_url[0]
+                        
+                        print(f"      📥 Downloading from: {image_url[:60]}...")
+                        
+                        # Step 3: Download the generated image
+                        img_response = requests.get(image_url, timeout=30)
+                        if img_response.status_code == 200:
+                            # Return base64 encoded image
+                            return base64.b64encode(img_response.content).decode()
+                        else:
+                            raise Exception(f"Failed to download image: {img_response.status_code}")
+                    
+                    elif status in ["failed", "canceled"]:
+                        raise Exception(f"Prediction {status}")
+                    
+                    # Still processing, continue polling
+                    print(f"      ⏳ Status: {status}, waiting...")
+                else:
+                    raise Exception(f"Failed to get status: {status_response.status_code}")
+            
+            # Timeout after all retries
+            raise Exception("Replicate generation timeout after 60s")
+        else:
+            error_msg = response.text[:200] if response.text else "Unknown error"
+            raise Exception(f"Failed to create prediction ({response.status_code}): {error_msg}")
+
+    def _huggingface_generate(self, prompt: str) -> str:
+        """Generate image using Hugging Face Inference API (Flux)"""
+        enhanced = f"{prompt}, ultra detailed, professional, vibrant, 4K"
+        
+        # Using FLUX.1-schnell (fast, Apache 2.0 license, free)
+        API_URL = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell"
+        
+        headers = {}
+        if self.huggingface_api_token:
+            headers['Authorization'] = f'Bearer {self.huggingface_api_token}'
+        
+        payload = {"inputs": enhanced}
+        
+        # Hugging Face may queue requests, retry with backoff
+        for attempt in range(3):
+            response = requests.post(
+                API_URL,
+                headers=headers,
+                json=payload,
+                timeout=60
+            )
+            
+            if response.status_code == 200:
+                # Check if it's actual image data
+                content_type = response.headers.get('content-type', '')
+                if 'image' in content_type:
+                    return base64.b64encode(response.content).decode()
+                else:
+                    # Might be JSON with error or loading status
+                    try:
+                        error_data = response.json()
+                        if 'error' in error_data:
+                            if 'loading' in error_data['error'].lower():
+                                print(f"      ⏳ Model loading, waiting {5 * (attempt + 1)}s...")
+                                time.sleep(5 * (attempt + 1))
+                                continue
+                    except:
+                        pass
+            elif response.status_code == 503:
+                print(f"      ⏳ Service unavailable, retrying in {5 * (attempt + 1)}s...")
+                time.sleep(5 * (attempt + 1))
+                continue
+            
+            break
+        
+        raise Exception(f"HuggingFace API error: {response.status_code}")
+
+    def _pollinations_generate(self, prompt: str) -> str:
+        """Generate image using Pollinations AI (Original fallback)"""
+        enhanced = f"{prompt}, ultra detailed, professional, vibrant, 4K"
+        encoded = quote(enhanced)
+
+        attempts = [
+            f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=true&model=flux",
+            f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=true&model=turbo",
+        ]
+
+        for url in attempts:
+            try:
+                response = requests.get(url, timeout=60)
+                if response.status_code == 200:
+                    return base64.b64encode(response.content).decode()
+            except Exception as e:
+                print(f"      ⚠️ Attempt failed: {str(e)[:50]}")
+            time.sleep(2)
+
+        raise Exception("Pollinations generation failed")
+
+    def _enhance_image_optional(self, original_path: str, temp_dir: str, index: int) -> str:
+        """
+        Optional Cloudinary AI enhancement with full fallback safety
+        
+        Returns:
+            - Enhanced image path if successful
+            - Original image path if enhancement fails or disabled
+        """
+        
+        # Skip if enhancement disabled
+        if not self.enable_enhancement:
+            print("   ⚠️ Enhancement disabled, using original")
+            print(f"   ✅ Final: Using original version")
+            return original_path
+        
+        try:
+            print(f"   ✨ Attempting Cloudinary AI enhancement...")
+            
+            # Step 1: Upload to Cloudinary
+            with open(original_path, 'rb') as f:
+                image_bytes = f.read()
+            image_base64 = base64.b64encode(image_bytes).decode()
+            
+            import hashlib
+            timestamp = int(time.time())
+            
+            params_for_signature = {
+                'timestamp': timestamp,
+            }
+            
+            # Add upload_preset if available
+            if self.cloudinary_upload_preset:
+                params_for_signature['upload_preset'] = self.cloudinary_upload_preset
+            
+            string_to_sign = '&'.join(f"{k}={v}" for k, v in sorted(params_for_signature.items())) + self.cloudinary_api_secret
+            signature = hashlib.sha1(string_to_sign.encode()).hexdigest()
+
+            url = f"https://api.cloudinary.com/v1_1/{self.cloudinary_cloud_name}/image/upload"
+            files = {'file': f"data:image/jpeg;base64,{image_base64}"}
+            data = {
+                'api_key': self.cloudinary_api_key,
+                'signature': signature,
+                'timestamp': timestamp,
+            }
+            
+            if self.cloudinary_upload_preset:
+                data['upload_preset'] = self.cloudinary_upload_preset
+
+            response = requests.post(url, files=files, data=data, timeout=60)
+            
+            if response.status_code != 200:
+                print(f"   ⚠️ Upload failed, using original")
+                print(f"   ✅ Final: Using original version")
+                return original_path
+            
+            response_data = response.json()
+            base_url = response_data['secure_url']
+            public_id = response_data['public_id']
+            
+            print(f"   ☁️ Uploaded to Cloudinary")
+            
+            # Step 2: Build enhanced URL with AI transformations (100% FREE features)
+            transformations = [
+                'q_auto',           # Auto quality
+                'f_auto',           # Auto format (WebP/AVIF)
+                'e_improve:outdoor', # AI color enhancement
+                'e_sharpen:80',     # AI sharpening
+                'c_fill',           # Fill crop mode
+                'g_auto',           # AI smart gravity (face/object detection)
+                'ar_9:16',          # 9:16 aspect ratio
+                'w_1080',           # Width
+                'h_1920'            # Height
+            ]
+            
+            transformation_string = ','.join(transformations)
+            
+            # Parse URL and insert transformations
+            parts = base_url.split('/upload/')
+            if len(parts) == 2:
+                enhanced_url = f"{parts[0]}/upload/{transformation_string}/{parts[1]}"
+            else:
+                enhanced_url = base_url
+            
+            print(f"   ✨ AI enhancement applied: quality↑, format↑, color↑, crop↑")
+            
+            # Step 3: Download enhanced image
+            enhanced_response = requests.get(enhanced_url, timeout=30)
+            
+            if enhanced_response.status_code == 200:
+                enhanced_path = f"{temp_dir}/img_enhanced_{index:03d}.jpg"
+                with open(enhanced_path, 'wb') as f:
+                    f.write(enhanced_response.content)
+                
+                print(f"   ⬇️ Enhanced image downloaded")
+                
+                # Cleanup: Delete from Cloudinary to save storage
+                self._delete_cloudinary_image(public_id)
+                print(f"   🗑️ Deleted from Cloudinary")
+                
+                print(f"   ✅ Final: Using enhanced version")
+                return enhanced_path
+            else:
+                print(f"   ⚠️ Download failed, using original")
+                print(f"   ✅ Final: Using original version")
+                return original_path
+                
+        except Exception as e:
+            print(f"   ⚠️ Enhancement failed ({str(e)[:50]}), using original")
+            print(f"   ✅ Final: Using original version")
+            return original_path
+    
+    def _delete_cloudinary_image(self, public_id: str):
+        """Silently delete image from Cloudinary (cleanup)"""
+        try:
+            auth = (self.cloudinary_api_key, self.cloudinary_api_secret)
+            url = f"https://api.cloudinary.com/v1_1/{self.cloudinary_cloud_name}/resources/image/upload"
+            data = {'public_ids[]': public_id}
+            requests.delete(url, auth=auth, data=data, timeout=10)
+        except:
+            pass  # Silent fail - not critical
 
     def _generate_ai_complete_package(self, niche: str, count: int, duration: int) -> dict:
         """AI generates complete video package"""
@@ -267,27 +607,6 @@ Return ONLY valid JSON:
             pass
 
         return self._generate_silent_audio()
-
-    def _generate_image(self, prompt: str) -> str:
-        """Generate image using Pollinations AI"""
-        enhanced = f"{prompt}, ultra detailed, professional, vibrant, 4K"
-        encoded = quote(enhanced)
-
-        attempts = [
-            f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=true&model=flux",
-            f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=true&model=turbo",
-        ]
-
-        for url in attempts:
-            try:
-                response = requests.get(url, timeout=260)
-                if response.status_code == 200:
-                    return base64.b64encode(response.content).decode()
-            except:
-                pass
-            time.sleep(15)
-
-        raise Exception("Image generation failed")
 
     def _generate_silent_audio(self) -> str:
         """Generate silent audio fallback"""
@@ -528,14 +847,14 @@ class CloudinaryVideoUploader:
             'upload_preset': upload_preset,
         }
 
-        print("☁️ Uploading to Cloudinary...")
+        print("\n☁️ Uploading video to Cloudinary...")
         response = requests.post(url, files=files, data=data, timeout=120)
         response_data = response.json()
 
         if response.status_code != 200:
             raise Exception(f"Upload failed: {response_data.get('error', {}).get('message')}")
         
-        print(f"✅ Uploaded: {response_data['secure_url']}")
+        print(f"✅ Video uploaded: {response_data['secure_url']}")
         print(f"📋 Public ID: {response_data['public_id']}")
         
         # Return both URL and public_id for potential deletion
@@ -561,7 +880,7 @@ class CloudinaryVideoUploader:
             'invalidate': True  # Remove from CDN cache immediately
         }
         
-        print(f"🗑️ Deleting video: {public_id}")
+        print(f"\n🗑️ Deleting video from Cloudinary: {public_id}")
         
         try:
             response = requests.delete(url, auth=auth, data=data, timeout=30)
@@ -571,7 +890,7 @@ class CloudinaryVideoUploader:
                 deleted_status = result.get('deleted', {}).get(public_id)
                 
                 if deleted_status == 'deleted':
-                    print(f"✅ Deleted successfully")
+                    print(f"✅ Video deleted from Cloudinary")
                     return True
                 elif deleted_status == 'not_found':
                     print(f"⚠️ Video not found (may already be deleted)")
@@ -587,6 +906,7 @@ class CloudinaryVideoUploader:
             print(f"⚠️ Delete error: {str(e)}")
             return False
 
+
 class InstagramReelPublisher:
     def __init__(self):
         """Initialize Instagram Graph API publisher"""
@@ -595,6 +915,8 @@ class InstagramReelPublisher:
 
     def publish_reel(self, account_id: str, access_token: str, video_url: str, caption: str) -> str:
         """Publish reel to Instagram"""
+        print("\n📱 Publishing to Instagram...")
+        
         create_url = f"{self.base_url}/{account_id}/media"
         create_params = {
             'media_type': 'REELS',
@@ -612,9 +934,9 @@ class InstagramReelPublisher:
             raise Exception(data.get('error', {}).get('message'))
 
         container_id = data['id']
-        print(f"✅ Container: {container_id}")
+        print(f"✅ Container created: {container_id}")
 
-        print("⏳ Processing...")
+        print("⏳ Processing video...")
         for i in range(30):
             status_response = requests.get(
                 f"https://graph.facebook.com/{container_id}",
@@ -622,7 +944,7 @@ class InstagramReelPublisher:
                 timeout=10
             )
             status_code = status_response.json().get('status_code')
-            print(f"Status: {status_code}")
+            print(f"   Status: {status_code}")
 
             if status_code == 'FINISHED':
                 break
@@ -630,7 +952,7 @@ class InstagramReelPublisher:
                 raise Exception(f"Processing failed: {status_code}")
             time.sleep(5)
 
-        print("🚀 Publishing...")
+        print("🚀 Publishing to feed...")
         publish_response = requests.post(
             f"{self.base_url}/{account_id}/media_publish",
             data={'creation_id': container_id, 'access_token': access_token},
@@ -641,7 +963,7 @@ class InstagramReelPublisher:
         if publish_response.status_code != 200:
             raise Exception(publish_data.get('error', {}).get('message'))
 
-        print(f"✅ Published: {publish_data['id']}")
+        print(f"✅ Published to Instagram: {publish_data['id']}")
         return publish_data['id']
 
 
@@ -658,6 +980,8 @@ def main():
     cloudinary_api_secret = os.getenv('CLOUDINARY_API_SECRET')
     instagram_account_id = os.getenv('INSTAGRAM_ACCOUNT_ID')
     instagram_access_token = os.getenv('INSTAGRAM_ACCESS_TOKEN')
+    replicate_api_token = os.getenv('REPLICATE_API_TOKEN')
+    huggingface_api_token = os.getenv('HUGGINGFACE_API_TOKEN')
 
     if not (google_api_key or openai_api_key):
         print("❌ Need at least one AI API key")
@@ -687,8 +1011,17 @@ def main():
         print(f"⏱️ Duration: {duration}s")
         print("=" * 50)
 
-        # Step 1: Generate Reel
-        generator = TrulyAIReelGenerator(google_api_key, openai_api_key)
+        # Step 1: Generate Reel (with multi-source generation + optional enhancement)
+        generator = TrulyAIReelGenerator(
+            google_api_key, 
+            openai_api_key,
+            cloudinary_cloud_name,
+            cloudinary_api_key,
+            cloudinary_api_secret,
+            cloudinary_upload_preset,
+            replicate_api_token,
+            huggingface_api_token
+        )
         reel_data = generator.generate_reel(niche, num_images, duration)
 
         # Step 2: Upload to Cloudinary
@@ -703,9 +1036,6 @@ def main():
 
         video_url = upload_result['secure_url']
         public_id = upload_result['public_id']
-        
-        print(f"✅ Video: {video_url}")
-        print(f"📋 Public ID: {public_id}")
 
         # Step 3: Publish to Instagram
         publisher = InstagramReelPublisher()
@@ -718,16 +1048,18 @@ def main():
             full_caption
         )
 
-        print("=" * 50)
+        print("\n" + "=" * 50)
         print("🎉 SUCCESS!")
         print(f"📝 Caption: {reel_data['caption']}")
-        print(f"🆔 Post: {post_id}")
+        print(f"🆔 Post ID: {post_id}")
+        print(f"🔗 Video URL: {video_url}")
         
         # Step 4: Delete from Cloudinary (after successful Instagram upload)
         print("=" * 50)
         print("🧹 Cleaning up Cloudinary...")
         
-        # Wait a bit to ensure Instagram has processed the video
+        # Wait to ensure Instagram has processed the video
+        print("⏳ Waiting 10 seconds for Instagram to cache video...")
         time.sleep(10)
         
         delete_success = uploader.delete_video(
@@ -738,14 +1070,18 @@ def main():
         )
         
         if delete_success:
-            print("✅ Video deleted from Cloudinary (Instagram already has it)")
+            print("✅ Cleanup complete - Video deleted from Cloudinary")
         else:
             print("⚠️ Could not delete from Cloudinary (but Instagram post is live)")
         
         print("=" * 50)
+        print("✅ REEL GENERATION COMPLETE!")
+        print("=" * 50)
 
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"\n❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
         raise
 
 
