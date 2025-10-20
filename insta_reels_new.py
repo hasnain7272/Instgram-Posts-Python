@@ -151,7 +151,7 @@ class TrulyAIReelGenerator:
             'title' : content_data['title'],
             'description': content_data['description'],
             'tags': content_data['tags'],
-            'category_id' : content_data['category_id']
+            'category_id' : content_data['category_id'],
             'temp_dir': temp_dir
         }
 
