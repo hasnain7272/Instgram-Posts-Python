@@ -987,67 +987,251 @@ class InstagramReelPublisher:
 
 class YouTubePublisher:
     """Publish videos to YouTube via Data API v3"""
-
+    
     def __init__(self, client_id=None, client_secret=None, refresh_token=None, token_uri=None):
-        """Initialize YouTube API client"""
+        """Initialize YouTube API client with proper validation"""
         print("\n📺 Initializing YouTube Publisher...")
-
-        self.creds = Credentials(
-            token=None,
-            refresh_token=refresh_token or os.getenv("REFRESH_TOKEN_YOUTUBE"),
-            token_uri=token_uri or os.getenv("YT_TOKEN_URI", "https://oauth2.googleapis.com/token"),
-            client_id=client_id or os.getenv("CLIENT_ID_YOUTUBE"),
-            client_secret=client_secret or os.getenv("CLIENT_SECRET_YOUTUBE"),
-        )
-        self.http = AuthorizedHttp(self.creds)
-        self.youtube = build("youtube", "v3", http=self.http, cache_discovery=False)
-
-        print("✅ YouTube client initialized.")
-
+        
+        # Get credentials with fallback to environment variables
+        self.client_id = client_id or os.getenv("CLIENT_ID_YOUTUBE")
+        self.client_secret = client_secret or os.getenv("CLIENT_SECRET_YOUTUBE")
+        self.refresh_token = refresh_token or os.getenv("REFRESH_TOKEN_YOUTUBE")
+        self.token_uri = token_uri or os.getenv("YT_TOKEN_URI", "https://oauth2.googleapis.com/token")
+        
+        # Validate all required credentials are present
+        missing = []
+        if not self.client_id:
+            missing.append("CLIENT_ID_YOUTUBE")
+        if not self.client_secret:
+            missing.append("CLIENT_SECRET_YOUTUBE")
+        if not self.refresh_token:
+            missing.append("REFRESH_TOKEN_YOUTUBE")
+        
+        if missing:
+            raise ValueError(f"Missing required YouTube credentials: {', '.join(missing)}")
+        
+        # Validate credential types (catch the tuple bug)
+        if not isinstance(self.client_id, str):
+            raise TypeError(f"client_id must be str, got {type(self.client_id)}")
+        if not isinstance(self.client_secret, str):
+            raise TypeError(f"client_secret must be str, got {type(self.client_secret)}")
+        if not isinstance(self.refresh_token, str):
+            raise TypeError(f"refresh_token must be str, got {type(self.refresh_token)}")
+        
+        # Validate credential format (basic sanity checks)
+        if len(self.client_id) < 10:
+            raise ValueError("client_id appears invalid (too short)")
+        if len(self.client_secret) < 10:
+            raise ValueError("client_secret appears invalid (too short)")
+        if len(self.refresh_token) < 20:
+            raise ValueError("refresh_token appears invalid (too short)")
+        
+        print("   ✅ All credentials validated")
+        
+        try:
+            # Create credentials object
+            self.creds = Credentials(
+                token=None,  # Will be refreshed automatically
+                refresh_token=self.refresh_token,
+                token_uri=self.token_uri,
+                client_id=self.client_id,
+                client_secret=self.client_secret,
+                scopes=['https://www.googleapis.com/auth/youtube.upload']
+            )
+            
+            # Test token refresh immediately to catch auth errors early
+            print("   🔄 Testing token refresh...")
+            from google.auth.transport.requests import Request
+            self.creds.refresh(Request())
+            print("   ✅ Token refresh successful")
+            
+            # Create authorized HTTP client
+            self.http = AuthorizedHttp(self.creds)
+            
+            # Build YouTube API client
+            self.youtube = build("youtube", "v3", http=self.http, cache_discovery=False)
+            
+            print("✅ YouTube client initialized successfully")
+            
+        except Exception as e:
+            error_msg = str(e)
+            if "invalid_client" in error_msg.lower():
+                raise ValueError(
+                    "OAuth client is invalid. Please verify:\n"
+                    "  1. CLIENT_ID_YOUTUBE and CLIENT_SECRET_YOUTUBE are correct\n"
+                    "  2. OAuth client exists in Google Cloud Console\n"
+                    "  3. OAuth client is not deleted or disabled"
+                )
+            elif "invalid_grant" in error_msg.lower():
+                raise ValueError(
+                    "Refresh token is invalid or expired. Please:\n"
+                    "  1. Generate a new refresh token\n"
+                    "  2. Ensure the token hasn't been revoked\n"
+                    "  3. Check that refresh token matches the client credentials"
+                )
+            else:
+                raise Exception(f"Failed to initialize YouTube client: {e}")
+    
     def publish_video(self, video_path: str, title: str, description: str,
                       tags=None, privacy="public", category_id="22") -> str:
-        """Upload a video to YouTube"""
+        """Upload a video to YouTube with robust error handling"""
+        
         print(f"\n🎬 Preparing to upload: {video_path}")
+        
+        # Validate video file exists
         if not os.path.exists(video_path):
             raise FileNotFoundError(f"Video not found: {video_path}")
-
-        media = MediaFileUpload(video_path, chunksize=-1, resumable=True)
-
+        
+        # Validate file size (YouTube limit: 256GB, but warn for large files)
+        file_size = os.path.getsize(video_path)
+        file_size_mb = file_size / (1024 * 1024)
+        print(f"   📦 Video size: {file_size_mb:.2f} MB")
+        
+        if file_size_mb > 10000:  # 10GB warning
+            print(f"   ⚠️ Large file detected. Upload may take a while...")
+        
+        # Validate title and description
+        if not title or len(title.strip()) == 0:
+            raise ValueError("Video title cannot be empty")
+        if len(title) > 100:
+            print(f"   ⚠️ Title truncated to 100 chars (was {len(title)})")
+            title = title[:97] + "..."
+        
+        if description and len(description) > 5000:
+            print(f"   ⚠️ Description truncated to 5000 chars (was {len(description)})")
+            description = description[:4997] + "..."
+        
+        # Validate tags
+        if tags:
+            if isinstance(tags, str):
+                tags = [t.strip() for t in tags.split(',')]
+            if len(tags) > 500:
+                print(f"   ⚠️ Too many tags, using first 500")
+                tags = tags[:500]
+        
+        # Validate category ID
+        valid_categories = ["1", "2", "10", "15", "17", "18", "19", "20", "21", "22", 
+                           "23", "24", "25", "26", "27", "28", "29", "30", "31", "32", 
+                           "33", "34", "35", "36", "37", "38", "39", "40", "41", "42", "43", "44"]
+        if category_id not in valid_categories:
+            print(f"   ⚠️ Invalid category_id '{category_id}', using '22' (People & Blogs)")
+            category_id = "22"
+        
+        # Create upload media object (256KB chunks for better progress reporting)
+        media = MediaFileUpload(
+            video_path, 
+            chunksize=256*1024,  # 256KB chunks
+            resumable=True,
+            mimetype='video/mp4'
+        )
+        
+        # Prepare video metadata
         body = {
             "snippet": {
                 "title": title,
-                "description": description,
+                "description": description or "",
                 "tags": tags or [],
                 "categoryId": category_id,
             },
-            "status": {"privacyStatus": privacy},
+            "status": {
+                "privacyStatus": privacy,
+                "selfDeclaredMadeForKids": False  # Important: declare this
+            },
         }
-
+        
         print("⬆️ Starting upload...")
+        
+        # Create upload request
         request = self.youtube.videos().insert(
             part="snippet,status",
             body=body,
             media_body=media
         )
-
+        
         response = None
         retry = 0
+        max_retries = 5
+        
         while response is None:
             try:
                 status, response = request.next_chunk()
+                
                 if status:
-                    print(f"📤 Upload progress: {int(status.progress() * 100)}%")
+                    progress = int(status.progress() * 100)
+                    print(f"📤 Upload progress: {progress}%")
+                    
             except Exception as e:
+                error_str = str(e).lower()
+                
+                # Handle specific error types
+                if "invalid_client" in error_str or "invalid_grant" in error_str:
+                    raise Exception(
+                        f"Authentication failed: {e}\n"
+                        "Your OAuth credentials may be invalid or expired.\n"
+                        "Please regenerate your refresh token."
+                    )
+                
+                elif "quota" in error_str:
+                    raise Exception(
+                        f"YouTube API quota exceeded: {e}\n"
+                        "Your daily upload quota is exhausted. Try again tomorrow."
+                    )
+                
+                elif "file" in error_str and "size" in error_str:
+                    raise Exception(
+                        f"File size error: {e}\n"
+                        "Video may be too large or corrupted."
+                    )
+                
+                # Retry for transient errors
                 retry += 1
-                if retry > 5:
-                    raise Exception(f"Upload failed after retries: {e}")
-                print(f"⚠️ Error: {e}. Retrying ({retry})...")
-                time.sleep(5)
-
+                if retry > max_retries:
+                    raise Exception(f"Upload failed after {max_retries} retries: {e}")
+                
+                wait_time = min(2 ** retry, 32)  # Exponential backoff, max 32s
+                print(f"⚠️ Error: {str(e)[:100]}")
+                print(f"   Retrying in {wait_time}s... (attempt {retry}/{max_retries})")
+                time.sleep(wait_time)
+        
+        # Extract video ID from response
         video_id = response.get("id")
+        
+        if not video_id:
+            raise Exception("Upload completed but no video ID returned")
+        
         print(f"✅ Upload completed! Video ID: {video_id}")
+        print(f"🔗 Watch at: https://www.youtube.com/watch?v={video_id}")
+        
+        # Video processing status (optional)
+        print("⏳ Video is now being processed by YouTube...")
+        print("   Processing may take several minutes depending on video length")
+        
         return video_id
-
+    
+    def get_video_status(self, video_id: str) -> dict:
+        """Check the processing status of an uploaded video"""
+        try:
+            request = self.youtube.videos().list(
+                part="status,processingDetails",
+                id=video_id
+            )
+            response = request.execute()
+            
+            if not response.get("items"):
+                return {"error": "Video not found"}
+            
+            video = response["items"][0]
+            status = video.get("status", {})
+            processing = video.get("processingDetails", {})
+            
+            return {
+                "upload_status": status.get("uploadStatus"),
+                "privacy_status": status.get("privacyStatus"),
+                "processing_status": processing.get("processingStatus"),
+                "processing_progress": processing.get("processingProgress", {})
+            }
+        except Exception as e:
+            return {"error": str(e)}
 
 def main():
     """Main execution function"""
@@ -1064,10 +1248,17 @@ def main():
     instagram_access_token = os.getenv('INSTAGRAM_ACCESS_TOKEN')
     replicate_api_token = os.getenv('REPLICATE_API_TOKEN')
     huggingface_api_token = os.getenv('HUGGINGFACE_API_TOKEN')
-    refresh_token = os.getenv("REFRESH_TOKEN_YOUTUBE"),
-    token_uri = "https://oauth2.googleapis.com/token" #os.getenv("YT_TOKEN_URI", "https://oauth2.googleapis.com/token"),
-    client_id = os.getenv("CLIENT_ID_YOUTUBE"),
-    client_secret = os.getenv("CLIENT_SECRET_YOUTUBE"),
+    refresh_token = os.getenv("REFRESH_TOKEN_YOUTUBE")
+    token_uri = os.getenv("YT_TOKEN_URI", "https://oauth2.googleapis.com/token")
+    client_id = os.getenv("CLIENT_ID_YOUTUBE")
+    client_secret = os.getenv("CLIENT_SECRET_YOUTUBE")
+
+    # Debug: Print credential status (without exposing secrets)
+    print("\n🔑 YouTube Credentials Check:")
+    print(f"   Client ID: {'✅ Set' if client_id else '❌ Missing'}")
+    print(f"   Client Secret: {'✅ Set' if client_secret else '❌ Missing'}")
+    print(f"   Refresh Token: {'✅ Set' if refresh_token else '❌ Missing'}")
+    print(f"   Token URI: {token_uri}")
     
     if not (google_api_key or openai_api_key):
         print("❌ Need at least one AI API key")
