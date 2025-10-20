@@ -61,6 +61,11 @@ jobs:
           REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
 
           # Use random niche for scheduled runs, or manual input for dispatch
+          CLIENT_ID_YOUTUBE: ${{ secrets.CLIENT_ID_YOUTUBE }}
+          CLIENT_SECRET_YOUTUBE: ${{ secrets.CLIENT_SECRET_YOUTUBE }}
+          REFRESH_TOKEN_YOUTUBE: ${{ secrets.REFRESH_TOKEN_YOUTUBE }}
+          
+          # Use random niche for scheduled runs, or manual input for dispatch
           REEL_NICHE: ${{ github.event_name == 'schedule' && steps.random-niche.outputs.niche || github.event.inputs.niche || 'travel' }}
           REEL_IMAGES: ${{ github.event.inputs.num_images || '5' }}
           REEL_DURATION: ${{ github.event.inputs.duration || '10' }}
