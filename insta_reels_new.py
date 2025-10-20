@@ -599,7 +599,7 @@ Return ONLY valid JSON:
                 } for i in range(count)],
                 'caption': f'Amazing {niche} content',
                 'hashtags': ['#reels', '#viral'],
-                'mood': 'upbeat'
+                'mood': 'upbeat',
                 'title': f'Amazing {niche} content',
                 'description': f'Amazing {niche} content',
                 'tags': ['#reels', '#viral']
