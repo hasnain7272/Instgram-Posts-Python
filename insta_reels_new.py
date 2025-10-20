@@ -1046,10 +1046,10 @@ class YouTubePublisher:
             print("   ✅ Token refresh successful")
             
             # Create authorized HTTP client
-            self.http = AuthorizedHttp(self.creds)
+            # self.http = AuthorizedHttp(self.creds)
             
             # Build YouTube API client
-            self.youtube = build("youtube", "v3", http=self.http, cache_discovery=False)
+            self.youtube = build("youtube", "v3", credentials=self.creds)
             
             print("✅ YouTube client initialized successfully")
             
