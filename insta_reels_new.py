@@ -9,6 +9,10 @@ import tempfile
 import json
 import random
 
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+from google.oauth2.credentials import Credentials
+
 class TrulyAIReelGenerator:
     def __init__(self, google_api_key: str = None, openai_api_key: str = None,
                  cloudinary_cloud_name: str = None, cloudinary_api_key: str = None, 
@@ -143,7 +147,11 @@ class TrulyAIReelGenerator:
         return {
             'video_base64': video_base64,
             'caption': content_data['caption'],
-            'hashtags': content_data['hashtags']
+            'hashtags': content_data['hashtags'],
+            'title' : content_data['title'],
+            'description': content_data['description'],
+            'tags': content_data['tags'],
+            'temp_dir': temp_dir
         }
 
     def _generate_image(self, prompt: str) -> str:
@@ -461,7 +469,7 @@ class TrulyAIReelGenerator:
 
     def _generate_ai_complete_package(self, niche: str, count: int, duration: int) -> dict:
         """AI generates complete video package"""
-        prompt = f"""You are an Professional expert Instagram content creator. Design a {duration}-second Reel with {count} clips for: {niche}.
+        prompt = f"""You are an Professional expert Instagram/Youtube content creator. Design a {duration}-second Reel with {count} clips for: {niche}.
 15-20 hashtags and quality trending caption
 
 For EACH clip, provide:
@@ -492,7 +500,10 @@ Return ONLY valid JSON:
   ],
   "caption": "Viral caption with call-to-action",
   "hashtags": ["#tag1", "#tag2", "#reels", "#viral"],
-  "mood": "upbeat" // Choose from: "energetic", "calm", "upbeat", "intense", "chill"
+  "mood": "upbeat" // Choose from: "energetic", "calm", "upbeat", "intense", "chill",
+  "title": "Quality title for youtube to shorts/video (have clear and easy catchy via search)",
+  "description": "Youtube Vedio description",
+  "tags": "Youtube Tags"
 }}"""
 
         json_str = None
@@ -589,6 +600,9 @@ Return ONLY valid JSON:
                 'caption': f'Amazing {niche} content',
                 'hashtags': ['#reels', '#viral'],
                 'mood': 'upbeat'
+                'title': f'Amazing {niche} content',
+                'description': f'Amazing {niche} content',
+                'tags': ['#reels', '#viral']
             }
 
     def _download_music(self, mood: str) -> str:
@@ -967,6 +981,68 @@ class InstagramReelPublisher:
         return publish_data['id']
 
 
+class YouTubePublisher:
+    """Publish videos to YouTube via Data API v3"""
+
+    def __init__(self, client_id=None, client_secret=None, refresh_token=None, token_uri=None):
+        """Initialize YouTube API client"""
+        print("\n📺 Initializing YouTube Publisher...")
+
+        self.creds = Credentials(
+            token=None,
+            refresh_token=refresh_token or os.getenv("REFRESH_TOKEN_YOUTUBE"),
+            token_uri=token_uri or os.getenv("YT_TOKEN_URI", "https://oauth2.googleapis.com/token"),
+            client_id=client_id or os.getenv("CLIENT_ID_YOUTUBE"),
+            client_secret=client_secret or os.getenv("CLIENT_SECRET_YOUTUBE"),
+        )
+        self.youtube = build("youtube", "v3", credentials=self.creds)
+        print("✅ YouTube client initialized.")
+
+    def publish_video(self, video_path: str, title: str, description: str,
+                      tags=None, privacy="public", category_id="22") -> str:
+        """Upload a video to YouTube"""
+        print(f"\n🎬 Preparing to upload: {video_path}")
+        if not os.path.exists(video_path):
+            raise FileNotFoundError(f"Video not found: {video_path}")
+
+        media = MediaFileUpload(video_path, chunksize=-1, resumable=True)
+
+        body = {
+            "snippet": {
+                "title": title,
+                "description": description,
+                "tags": tags or [],
+                "categoryId": category_id,
+            },
+            "status": {"privacyStatus": privacy},
+        }
+
+        print("⬆️ Starting upload...")
+        request = self.youtube.videos().insert(
+            part="snippet,status",
+            body=body,
+            media_body=media
+        )
+
+        response = None
+        retry = 0
+        while response is None:
+            try:
+                status, response = request.next_chunk()
+                if status:
+                    print(f"📤 Upload progress: {int(status.progress() * 100)}%")
+            except Exception as e:
+                retry += 1
+                if retry > 5:
+                    raise Exception(f"Upload failed after retries: {e}")
+                print(f"⚠️ Error: {e}. Retrying ({retry})...")
+                time.sleep(5)
+
+        video_id = response.get("id")
+        print(f"✅ Upload completed! Video ID: {video_id}")
+        return video_id
+
+
 def main():
     """Main execution function"""
     print("🎬 TRULY AI-DRIVEN Instagram Reel Generator")
@@ -982,7 +1058,11 @@ def main():
     instagram_access_token = os.getenv('INSTAGRAM_ACCESS_TOKEN')
     replicate_api_token = os.getenv('REPLICATE_API_TOKEN')
     huggingface_api_token = os.getenv('HUGGINGFACE_API_TOKEN')
-
+    refresh_token = os.getenv("REFRESH_TOKEN_YOUTUBE"),
+    token_uri = os.getenv("YT_TOKEN_URI", "https://oauth2.googleapis.com/token"),
+    client_id = os.getenv("CLIENT_ID_YOUTUBE"),
+    client_secret = os.getenv("CLIENT_SECRET_YOUTUBE"),
+    
     if not (google_api_key or openai_api_key):
         print("❌ Need at least one AI API key")
         return
@@ -1077,6 +1157,19 @@ def main():
         print("=" * 50)
         print("✅ REEL GENERATION COMPLETE!")
         print("=" * 50)
+
+        # Youtube Upload
+
+        video_path = f"{reel_data['temp_dir']}/reel.mp4"
+        yt_publisher = YouTubePublisher()
+        video_id = yt_publisher.publish_video(
+            video_path=video_path,
+            title=reel_data['title'],
+            description=reel_data['description'],
+            tags=reel_data['tags'],
+            privacy="public"
+        )
+        print(f"📺 YouTube Video: https://www.youtube.com/watch?v={video_id}")
 
     except Exception as e:
         print(f"\n❌ Error: {e}")
