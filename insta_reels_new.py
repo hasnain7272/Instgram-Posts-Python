@@ -12,6 +12,7 @@ import random
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
+from google_auth_httplib2 import AuthorizedHttp
 
 class TrulyAIReelGenerator:
     def __init__(self, google_api_key: str = None, openai_api_key: str = None,
@@ -998,7 +999,9 @@ class YouTubePublisher:
             client_id=client_id or os.getenv("CLIENT_ID_YOUTUBE"),
             client_secret=client_secret or os.getenv("CLIENT_SECRET_YOUTUBE"),
         )
-        self.youtube = build("youtube", "v3", credentials=self.creds)
+        self.http = AuthorizedHttp(self.creds)
+        self.youtube = build("youtube", "v3", http=self.http, cache_discovery=False)
+
         print("✅ YouTube client initialized.")
 
     def publish_video(self, video_path: str, title: str, description: str,
@@ -1062,7 +1065,7 @@ def main():
     replicate_api_token = os.getenv('REPLICATE_API_TOKEN')
     huggingface_api_token = os.getenv('HUGGINGFACE_API_TOKEN')
     refresh_token = os.getenv("REFRESH_TOKEN_YOUTUBE"),
-    token_uri = os.getenv("YT_TOKEN_URI", "https://oauth2.googleapis.com/token"),
+    token_uri = "https://oauth2.googleapis.com/token" #os.getenv("YT_TOKEN_URI", "https://oauth2.googleapis.com/token"),
     client_id = os.getenv("CLIENT_ID_YOUTUBE"),
     client_secret = os.getenv("CLIENT_SECRET_YOUTUBE"),
     
