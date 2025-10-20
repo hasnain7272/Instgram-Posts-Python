@@ -151,6 +151,7 @@ class TrulyAIReelGenerator:
             'title' : content_data['title'],
             'description': content_data['description'],
             'tags': content_data['tags'],
+            'category_id' : content_data['category_id']
             'temp_dir': temp_dir
         }
 
@@ -503,7 +504,8 @@ Return ONLY valid JSON:
   "mood": "upbeat" // Choose from: "energetic", "calm", "upbeat", "intense", "chill",
   "title": "Quality title for youtube to shorts/video (have clear and easy catchy via search)",
   "description": "Youtube Vedio description",
-  "tags": "Youtube Tags"
+  "tags": "Youtube Tags",
+  "category_id" : "Youtube category id (as per niche content e.g 22)"
 }}"""
 
         json_str = None
@@ -602,7 +604,8 @@ Return ONLY valid JSON:
                 'mood': 'upbeat',
                 'title': f'Amazing {niche} content',
                 'description': f'Amazing {niche} content',
-                'tags': ['#reels', '#viral']
+                'tags': ['#reels', '#viral'],
+                'category_id': '22'
             }
 
     def _download_music(self, mood: str) -> str:
@@ -1161,13 +1164,19 @@ def main():
         # Youtube Upload
 
         video_path = f"{reel_data['temp_dir']}/reel.mp4"
-        yt_publisher = YouTubePublisher()
+        yt_publisher = YouTubePublisher(
+            client_id=client_id, 
+            client_secret=client_secret, 
+            refresh_token=refresh_token, 
+            token_uri=token_uri)
+        
         video_id = yt_publisher.publish_video(
             video_path=video_path,
             title=reel_data['title'],
             description=reel_data['description'],
             tags=reel_data['tags'],
-            privacy="public"
+            privacy="public",
+            category_id = reel_data['category_id']
         )
         print(f"📺 YouTube Video: https://www.youtube.com/watch?v={video_id}")
 
