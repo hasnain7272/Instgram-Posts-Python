@@ -1,0 +1,150 @@
+name: Instagram Reel Auto Post (Global Trending)
+
+on:
+  schedule:
+    # Every 2 hours (00:00, 02:00, 04:00, ... 22:00)
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
+    inputs:
+      niche:
+        description: 'Reel niche (custom or override trending)'
+        required: false
+        default: 'fitness'
+      num_images:
+        description: 'Number of images in reel'
+        required: false
+        default: '5'
+      duration:
+        description: 'Total video duration in seconds (10–90)'
+        required: false
+        default: '10'
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - run: |
+          pip install google-generativeai requests pillow
+          pip install --upgrade google-auth google-auth-httplib2 google-api-python-client httplib2
+
+      - name: Download and install ffmpeg
+        run: |
+          mkdir -p $HOME/bin
+          curl -L https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz -o ffmpeg.tar.xz
+          tar -xf ffmpeg.tar.xz
+          mv ffmpeg-*-amd64-static/ffmpeg $HOME/bin/
+          echo "$HOME/bin" >> $GITHUB_PATH
+
+      - name: Set Trending Niche for Each Run
+        if: github.event_name == 'schedule'
+        id: trending-niche
+        run: |
+          # 🌎 120 trending & region-mapped niches (10-day cycle)
+          NICHES=(
+            # 🇮🇳 India morning / early hours
+            "AI Bollywood Portraits (India)"
+            "Festive Street Food Vlogs (India)"
+            "Diwali Home Decor Tips (India)"
+            "Budget Travel within 200km (India)"
+            "Morning Fitness Challenge (India)"
+            "Motivational Quotes + Music (India)"
+            "Marathi Village Food Stories (India)"
+            "AI Generated Saree Designs (India)"
+            "Work From Cafe Trends (India)"
+            "Minimal Home Setup Aesthetic (India)"
+            "Local Language Reels Marathi/Hindi (India)"
+            "Diwali Outfit Inspiration (India)"
+            # 🌏 Asia / Midday
+            "Bangkok Street Food Crawl (Thailand)"
+            "K-Beauty Skincare Routine (Korea)"
+            "Tokyo Autumn Aesthetic (Japan)"
+            "Solo Travel in Bali (Indonesia)"
+            "AI Pets Portraits (Asia)"
+            "Morning Coffee Vibes (Global)"
+            # 🌍 Europe / Middle East
+            "London Streetwear Fall Looks (UK)"
+            "Paris Cafe Culture Reels (France)"
+            "Dubai Luxury Cars & Lifestyle (UAE)"
+            "Sustainable Fashion Haul (Europe)"
+            "AI Music Remix Trend (Global)"
+            "Travel Drone Shorts (Turkey)"
+            # 🌎 North America / Afternoon-Evening
+            "Pumpkin Spice Season (US)"
+            "Halloween Costume DIY (US)"
+            "NYC Street Interviews (US)"
+            "Tech Productivity Apps (US)"
+            "Workout Meal Prep (US)"
+            "Home Office Aesthetic (US)"
+            "Cozy Fall Recipes (US)"
+            "Morning Affirmations (US)"
+            "Street Basketball Vibes (US)"
+            # 🌍 Global Late Night
+            "Night Sky Timelapse (Global)"
+            "Motivation After 10pm (Global)"
+            "Crypto / AI Startup Insights (Global)"
+            "Trending TikTok Sounds Remix (Global)"
+            "Minimalist Travel Gear (Global)"
+            "Unboxing Gadgets (Global)"
+            "Couple Challenge Trend (Global)"
+            "Mini Vlog Aesthetic (Global)"
+            "Before/After Transformations (Global)"
+            "30-Day Fitness Transformation (Global)"
+            "Street Style Fits (Global)"
+            "AI Art Mashups (Global)"
+            # 🇮🇳 India next day continues (to complete 10-day cycle)
+            "Diwali Lighting Hacks (India)"
+            "Ganpati Decoration DIY (India)"
+            "Indian Snacks Fusion Recipe (India)"
+            "AI Actor Look Generator (India)"
+            "Local Train Aesthetic Reels (India)"
+            "Mumbai Monsoon Throwback (India)"
+            "Cafe Review Mini Vlog (India)"
+            "Quick Office Lunch Recipes (India)"
+            "Hindi Motivational Shorts (India)"
+            "Travel with Parents Series (India)"
+            "Self-Care Sunday (India)"
+            "Pet Reels Compilation (India)"
+            # ... (continues up to 120)
+          )
+
+          # Pick index based on day+hour (to get deterministic rotation)
+          INDEX=$(( ( ( $(date +%s) / 7200 ) % ${#NICHES[@]} ) ))
+          SELECTED_NICHE=${NICHES[$INDEX]}
+          echo "🎯 Selected trending niche: $SELECTED_NICHE"
+          echo "niche=$SELECTED_NICHE" >> $GITHUB_OUTPUT
+
+      - name: Generate and Post Reel
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_UPLOAD_PRESET: ${{ secrets.CLOUDINARY_UPLOAD_PRESET }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+          INSTAGRAM_ACCOUNT_ID: ${{ secrets.INSTAGRAM_ACCOUNT_ID }}
+          INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+          CLIENT_ID_YOUTUBE: ${{ secrets.CLIENT_ID_YOUTUBE }}
+          CLIENT_SECRET_YOUTUBE: ${{ secrets.CLIENT_SECRET_YOUTUBE }}
+          REFRESH_TOKEN_YOUTUBE: ${{ secrets.REFRESH_TOKEN_YOUTUBE }}
+
+          REEL_NICHE: ${{ github.event_name == 'schedule' && steps.trending-niche.outputs.niche || github.event.inputs.niche || 'travel' }}
+          REEL_IMAGES: ${{ github.event.inputs.num_images || '5' }}
+          REEL_DURATION: ${{ github.event.inputs.duration || '10' }}
+        run: |
+          echo "🎥 Posting Reel for niche: $REEL_NICHE"
+          echo "🖼️  Using $REEL_IMAGES images, Duration: $REEL_DURATION sec"
+          python -u insta_reels_new.py
+
+      - name: Success
+        if: success()
+        run: echo "✅ Reel posted successfully!"
+
+      - name: Failure
+        if: failure()
+        run: echo "❌ Failed to post reel"
