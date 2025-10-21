@@ -1,4 +1,4 @@
-name: Instagram Reel Auto Post (Global Trending)
+name: Time-Based Trending Posts
 
 on:
   schedule:
@@ -6,10 +6,6 @@ on:
     - cron: '0 */2 * * *'
   workflow_dispatch:
     inputs:
-      niche:
-        description: 'Reel niche (custom or override trending)'
-        required: false
-        default: 'fitness'
       num_images:
         description: 'Number of images in reel'
         required: false
@@ -40,13 +36,12 @@ jobs:
           mv ffmpeg-*-amd64-static/ffmpeg $HOME/bin/
           echo "$HOME/bin" >> $GITHUB_PATH
 
-      - name: Set Trending Niche for Each Run
-        if: github.event_name == 'schedule'
-        id: trending-niche
+      - name: Select Niche Based on Time (Global Trend Rotation)
+        id: time-niche
         run: |
-          # 🌎 120 trending & region-mapped niches (10-day cycle)
+          # 🌍 Full 10-day (120-slot) global trending niche rotation
           NICHES=(
-            # 🇮🇳 India morning / early hours
+            # Day 1
             "AI Bollywood Portraits (India)"
             "Festive Street Food Vlogs (India)"
             "Diwali Home Decor Tips (India)"
@@ -54,27 +49,26 @@ jobs:
             "Morning Fitness Challenge (India)"
             "Motivational Quotes + Music (India)"
             "Marathi Village Food Stories (India)"
-            "AI Generated Saree Designs (India)"
-            "Work From Cafe Trends (India)"
+            "AI Saree Design Showcase (India)"
+            "Work From Cafe Reels (India)"
             "Minimal Home Setup Aesthetic (India)"
-            "Local Language Reels Marathi/Hindi (India)"
+            "Local Language Shorts Marathi/Hindi (India)"
             "Diwali Outfit Inspiration (India)"
-            # 🌏 Asia / Midday
+            # Day 2
             "Bangkok Street Food Crawl (Thailand)"
             "K-Beauty Skincare Routine (Korea)"
             "Tokyo Autumn Aesthetic (Japan)"
             "Solo Travel in Bali (Indonesia)"
-            "AI Pets Portraits (Asia)"
+            "AI Pet Portraits (Asia)"
             "Morning Coffee Vibes (Global)"
-            # 🌍 Europe / Middle East
             "London Streetwear Fall Looks (UK)"
             "Paris Cafe Culture Reels (France)"
             "Dubai Luxury Cars & Lifestyle (UAE)"
             "Sustainable Fashion Haul (Europe)"
             "AI Music Remix Trend (Global)"
             "Travel Drone Shorts (Turkey)"
-            # 🌎 North America / Afternoon-Evening
-            "Pumpkin Spice Season (US)"
+            # Day 3
+            "Pumpkin Spice Season Recipes (US)"
             "Halloween Costume DIY (US)"
             "NYC Street Interviews (US)"
             "Tech Productivity Apps (US)"
@@ -83,10 +77,10 @@ jobs:
             "Cozy Fall Recipes (US)"
             "Morning Affirmations (US)"
             "Street Basketball Vibes (US)"
-            # 🌍 Global Late Night
             "Night Sky Timelapse (Global)"
             "Motivation After 10pm (Global)"
-            "Crypto / AI Startup Insights (Global)"
+            "Crypto AI Startup Insights (Global)"
+            # Day 4
             "Trending TikTok Sounds Remix (Global)"
             "Minimalist Travel Gear (Global)"
             "Unboxing Gadgets (Global)"
@@ -96,10 +90,10 @@ jobs:
             "30-Day Fitness Transformation (Global)"
             "Street Style Fits (Global)"
             "AI Art Mashups (Global)"
-            # 🇮🇳 India next day continues (to complete 10-day cycle)
             "Diwali Lighting Hacks (India)"
             "Ganpati Decoration DIY (India)"
             "Indian Snacks Fusion Recipe (India)"
+            # Day 5
             "AI Actor Look Generator (India)"
             "Local Train Aesthetic Reels (India)"
             "Mumbai Monsoon Throwback (India)"
@@ -107,15 +101,82 @@ jobs:
             "Quick Office Lunch Recipes (India)"
             "Hindi Motivational Shorts (India)"
             "Travel with Parents Series (India)"
-            "Self-Care Sunday (India)"
+            "Self-Care Sunday Routine (India)"
             "Pet Reels Compilation (India)"
-            # ... (continues up to 120)
+            "Goa Weekend Getaway (India)"
+            "Fashion Dupes on Budget (India)"
+            "Viral Meme Format Reels (India)"
+            # Day 6
+            "Morning Mindset Boost (Asia)"
+            "Minimal Tech Desk Setup (Asia)"
+            "Productivity Hack of the Day (Asia)"
+            "Best Camera Apps 2025 (Asia)"
+            "AI Storytelling Reels (Asia)"
+            "Korean Street Dance (Korea)"
+            "Tokyo Neon Nights (Japan)"
+            "Singapore Food Market (Asia)"
+            "Bali Beach Chill Reel (Asia)"
+            "Luxury Hotel Tour (Asia)"
+            "Street Food Taste Test (Asia)"
+            "AI Mascot Creation Trend (Asia)"
+            # Day 7
+            "European Autumn Fashion Lookbook (EU)"
+            "Paris Sunset Timelapse (France)"
+            "Berlin Startup Life (Germany)"
+            "Italian Coffee Routine (Italy)"
+            "Sustainable Living Hacks (EU)"
+            "London City Walk POV (UK)"
+            "Copenhagen Interior Design (Denmark)"
+            "Vintage Thrift Reels (EU)"
+            "Street Performance Clips (EU)"
+            "Local Artist Feature (EU)"
+            "AI-Generated Music Loops (EU)"
+            "Festival Highlights (EU)"
+            # Day 8
+            "Fall Fitness Challenge (US)"
+            "Motivation Monday Reels (US)"
+            "Tech News Recap (US)"
+            "Behind the Scenes Mini Vlog (US)"
+            "Home Decor DIY Hacks (US)"
+            "College Life Day in the Life (US)"
+            "Pet Care Tips (US)"
+            "AI Meme Generator Trend (US)"
+            "Morning Smoothie Recipes (US)"
+            "Weekend Productivity Routine (US)"
+            "Funny Couple Reels (US)"
+            "New Viral Transition Effect (US)"
+            # Day 9
+            "Drone Reel of the Week (Global)"
+            "Street Culture Edits (Global)"
+            "Gaming Highlight Shorts (Global)"
+            "AI Voice-Over Narration (Global)"
+            "Digital Nomad Lifestyle (Global)"
+            "Motivational Sound Mashups (Global)"
+            "Cinematic Travel Transitions (Global)"
+            "One-Minute Tutorials (Global)"
+            "Visual Illusion Reels (Global)"
+            "Street Dance Collaboration (Global)"
+            "Best Free AI Tools 2025 (Global)"
+            "Time-Lapse City Life (Global)"
+            # Day 10
+            "Mindfulness Routine (Global)"
+            "ASMR Coffee Pour (Global)"
+            "Slow-Mo Transformation (Global)"
+            "Morning Beach Meditation (Global)"
+            "AI Cartoonify Yourself (Global)"
+            "Color Grading Reels (Global)"
+            "Nature Sound Compilation (Global)"
+            "Positive Affirmation Shorts (Global)"
+            "Workspace Setup Tours (Global)"
+            "Recreate Old Photo Challenge (Global)"
+            "Trending Reel Sound Sync (Global)"
+            "Weekly Highlight Montage (Global)"
           )
 
-          # Pick index based on day+hour (to get deterministic rotation)
+          # Calculate index by time (every 2 hours = 7200 sec)
           INDEX=$(( ( ( $(date +%s) / 7200 ) % ${#NICHES[@]} ) ))
           SELECTED_NICHE=${NICHES[$INDEX]}
-          echo "🎯 Selected trending niche: $SELECTED_NICHE"
+          echo "🎯 Auto-selected niche: $SELECTED_NICHE"
           echo "niche=$SELECTED_NICHE" >> $GITHUB_OUTPUT
 
       - name: Generate and Post Reel
@@ -133,7 +194,8 @@ jobs:
           CLIENT_SECRET_YOUTUBE: ${{ secrets.CLIENT_SECRET_YOUTUBE }}
           REFRESH_TOKEN_YOUTUBE: ${{ secrets.REFRESH_TOKEN_YOUTUBE }}
 
-          REEL_NICHE: ${{ github.event_name == 'schedule' && steps.trending-niche.outputs.niche || github.event.inputs.niche || 'travel' }}
+          # Same logic for both schedule & manual trigger
+          REEL_NICHE: ${{ steps.time-niche.outputs.niche }}
           REEL_IMAGES: ${{ github.event.inputs.num_images || '5' }}
           REEL_DURATION: ${{ github.event.inputs.duration || '10' }}
         run: |
