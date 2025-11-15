@@ -96,7 +96,7 @@ class TrulyAIReelGenerator:
         
         # The new API uses an OpenAI-compatible payload
         payload = {
-            "model": "Qwen/Qwen3-4B-Instruct-2507:nscale"
+            "model": "Qwen/Qwen3-4B-Instruct-2507:nscale",
             "messages": [
                 {"role": "system", "content": "You are a video editor. You must return ONLY the valid JSON object, with no other text before or after."},
                 {"role": "user", "content": prompt}
