@@ -34,7 +34,7 @@ class TrulyAIReelGenerator:
         self.huggingface_api_token = huggingface_api_token
         
         # Check if enhancement is enabled
-        self.enable_enhancement = os.getenv('ENABLE_CLOUDINARY_ENHANCE', 'false').lower() == 'true'
+        self.enable_enhancement = os.getenv('ENABLE_CLOUDINARY_ENHANCE', 'true').lower() == 'true'
         if self.enable_enhancement:
             if all([cloudinary_cloud_name, cloudinary_api_key, cloudinary_api_secret]):
                 print("✨ Cloudinary AI enhancement: ENABLED")
@@ -81,6 +81,62 @@ class TrulyAIReelGenerator:
             print("⚠️ Could not check FFmpeg filters - assuming no drawtext")
             return False
 
+    def _huggingface_text_generate(self, prompt: str) -> str:
+        """Generate JSON package using Hugging Face Inference API (OpenAI compatible)"""
+        if not self.huggingface_api_token:
+            raise Exception("Hugging Face API token required")
+        
+        # This is the new, correct endpoint
+        API_URL = "https://router.huggingface.co/v1/chat/completions"
+        
+        headers = {
+            "Authorization": f"Bearer {self.huggingface_api_token}",
+            "Content-Type": "application/json"
+        }
+        
+        # The new API uses an OpenAI-compatible payload
+        payload = {
+            "model": "Qwen/Qwen3-4B-Instruct-2507:nscale",
+            "messages": [
+                {"role": "system", "content": "You are a video editor. You must return ONLY the valid JSON object, with no other text before or after."},
+                {"role": "user", "content": prompt}
+            ],
+            "max_tokens": 4096,
+            "temperature": 0.7,
+            "stream": False
+        }
+        
+        # Retry logic for model loading (same as your image generator)
+        for attempt in range(3):
+            try:
+                response = requests.post(API_URL, headers=headers, json=payload, timeout=90)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    if 'choices' in data and len(data['choices']) > 0:
+                        # Extract the text from the OpenAI-compatible response
+                        return data['choices'][0]['message']['content']
+                    else:
+                        raise Exception(f"Unexpected HF response format: {str(data)[:200]}")
+
+                elif response.status_code == 503: # Service Unavailable / Model loading
+                    print(f"    ⏳ HF Text Model loading (503), waiting {5 * (attempt + 1)}s...")
+                    time.sleep(5 * (attempt + 1))
+                    continue
+                else:
+                    # Don't retry on other errors (like 400 Bad Request)
+                    raise Exception(f"HuggingFace text API error: {response.status_code} {response.text[:100]}")
+            
+            except requests.exceptions.ReadTimeout:
+                print(f"    ⏳ HF Text request timed out, retrying ({attempt + 1}/3)...")
+                time.sleep(5 * (attempt + 1))
+                continue
+            except Exception as e:
+                 # Catch other exceptions and re-raise
+                 raise e 
+        
+        raise Exception("HuggingFace text generation failed after 3 retries")
+        
     def generate_reel(self, niche: str, num_images: int = 20, duration: int = 15):
         """Generate truly AI-driven Instagram Reel"""
         print(f"🎬 Generating AI-controlled {num_images}-image reel for {niche} ({duration}s)...")
@@ -520,29 +576,45 @@ Return ONLY valid JSON:
                 print("✅ AI design complete")
             except Exception as e:
                 print(f"⚠️ Gemini failed: {str(e)[:100]}")
+                try:
+                    print("🔄 Using Hugging Face...")
+                    json_str = self._huggingface_text_generate(prompt)
+                    print("✅ Hugging Face design complete")
+                except Exception as e:
+                    print(f"⚠️ Hugging Face failed: {str(e)}")
 
-        if (not json_str or len(json_str) < 50) and self.openai_api_key:
-            try:
-                print("🔄 Using OpenAI...")
-                response = requests.post(
-                    'https://api.openai.com/v1/chat/completions',
-                    headers={'Authorization': f'Bearer {self.openai_api_key}', 'Content-Type': 'application/json'},
-                    json={
-                        'model': 'gpt-4o-mini',
-                        'messages': [
-                            {'role': 'system', 'content': 'You are a video editor. Return only valid JSON.'},
-                            {'role': 'user', 'content': prompt}
-                        ],
-                        'temperature': 0.9,
-                        'max_tokens': 3000
-                    },
-                    timeout=30
-                )
-                if response.status_code == 200:
-                    json_str = response.json()['choices'][0]['message']['content'].strip()
-                    print("✅ OpenAI design complete")
-            except Exception as e:
-                print(f"⚠️ OpenAI failed: {str(e)[:100]}")
+        # if (not json_str or len(json_str) < 50) and self.openai_api_key:
+        #     try:
+        #         print("🔄 Using OpenAI...")
+        #         response = requests.post(
+        #             'https://api.openai.com/v1/chat/completions',
+        #             headers={'Authorization': f'Bearer {self.openai_api_key}', 'Content-Type': 'application/json'},
+        #             json={
+        #                 'model': 'gpt-4o-mini',
+        #                 'messages': [
+        #                     {'role': 'system', 'content': 'You are a video editor. Return only valid JSON.'},
+        #                     {'role': 'user', 'content': prompt}
+        #                 ],
+        #                 'temperature': 0.9,
+        #                 'max_tokens': 3000
+        #             },
+        #             timeout=30
+        #         )
+        #         if response.status_code == 200:
+        #             json_str = response.json()['choices'][0]['message']['content'].strip()
+        #             print("✅ OpenAI design complete")
+        #     except Exception as e:
+        #         print(f"⚠️ OpenAI failed: {str(e)[:100]}")
+
+        # --- NEW HUGGING FACE FALLBACK ---
+        # if (not json_str or len(json_str) < 50) and self.huggingface_api_token:
+        #     try:
+        #         print("🔄 Using Hugging Face...")
+        #         json_str = self._huggingface_text_generate(prompt)
+        #         print("✅ Hugging Face design complete")
+        #     except Exception as e:
+        #         print(f"⚠️ Hugging Face failed: {str(e)[:100]}")
+        # --- END OF NEW BLOCK ---
 
         if not json_str:
             raise Exception("AI generation failed")
@@ -584,6 +656,7 @@ Return ONLY valid JSON:
                 raise ValueError("Invalid clips structure")
 
             data['mood'] = data.get('mood', 'upbeat')
+            print(data)
             return data
 
         except Exception as e:

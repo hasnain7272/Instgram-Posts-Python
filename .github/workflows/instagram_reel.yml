@@ -61,6 +61,7 @@ jobs:
           INSTAGRAM_ACCOUNT_ID: ${{ secrets.INSTAGRAM_ACCOUNT_ID }}
           INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
           REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+          HUGGINGFACE_API_TOKEN : ${{ secrets.HUGGINGFACE_TOKEN_1 }}
 
           # Use random niche for scheduled runs, or manual input for dispatch
           CLIENT_ID_YOUTUBE: ${{ secrets.CLIENT_ID_YOUTUBE }}
