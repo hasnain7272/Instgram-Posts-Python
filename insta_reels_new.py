@@ -564,28 +564,28 @@ Return ONLY valid JSON:
             except Exception as e:
                 print(f"⚠️ Gemini failed: {str(e)[:100]}")
 
-        if (not json_str or len(json_str) < 50) and self.openai_api_key:
-            try:
-                print("🔄 Using OpenAI...")
-                response = requests.post(
-                    'https://api.openai.com/v1/chat/completions',
-                    headers={'Authorization': f'Bearer {self.openai_api_key}', 'Content-Type': 'application/json'},
-                    json={
-                        'model': 'gpt-4o-mini',
-                        'messages': [
-                            {'role': 'system', 'content': 'You are a video editor. Return only valid JSON.'},
-                            {'role': 'user', 'content': prompt}
-                        ],
-                        'temperature': 0.9,
-                        'max_tokens': 3000
-                    },
-                    timeout=30
-                )
-                if response.status_code == 200:
-                    json_str = response.json()['choices'][0]['message']['content'].strip()
-                    print("✅ OpenAI design complete")
-            except Exception as e:
-                print(f"⚠️ OpenAI failed: {str(e)[:100]}")
+        # if (not json_str or len(json_str) < 50) and self.openai_api_key:
+        #     try:
+        #         print("🔄 Using OpenAI...")
+        #         response = requests.post(
+        #             'https://api.openai.com/v1/chat/completions',
+        #             headers={'Authorization': f'Bearer {self.openai_api_key}', 'Content-Type': 'application/json'},
+        #             json={
+        #                 'model': 'gpt-4o-mini',
+        #                 'messages': [
+        #                     {'role': 'system', 'content': 'You are a video editor. Return only valid JSON.'},
+        #                     {'role': 'user', 'content': prompt}
+        #                 ],
+        #                 'temperature': 0.9,
+        #                 'max_tokens': 3000
+        #             },
+        #             timeout=30
+        #         )
+        #         if response.status_code == 200:
+        #             json_str = response.json()['choices'][0]['message']['content'].strip()
+        #             print("✅ OpenAI design complete")
+        #     except Exception as e:
+        #         print(f"⚠️ OpenAI failed: {str(e)[:100]}")
 
         # --- NEW HUGGING FACE FALLBACK ---
         if (not json_str or len(json_str) < 50) and self.huggingface_api_token:
