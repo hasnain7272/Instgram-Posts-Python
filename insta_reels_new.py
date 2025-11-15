@@ -34,7 +34,7 @@ class TrulyAIReelGenerator:
         self.huggingface_api_token = huggingface_api_token
         
         # Check if enhancement is enabled
-        self.enable_enhancement = os.getenv('ENABLE_CLOUDINARY_ENHANCE', 'false').lower() == 'true'
+        self.enable_enhancement = os.getenv('ENABLE_CLOUDINARY_ENHANCE', 'true').lower() == 'true'
         if self.enable_enhancement:
             if all([cloudinary_cloud_name, cloudinary_api_key, cloudinary_api_secret]):
                 print("✨ Cloudinary AI enhancement: ENABLED")
@@ -656,6 +656,7 @@ Return ONLY valid JSON:
                 raise ValueError("Invalid clips structure")
 
             data['mood'] = data.get('mood', 'upbeat')
+            print(data)
             return data
 
         except Exception as e:
