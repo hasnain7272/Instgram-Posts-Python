@@ -568,7 +568,7 @@ Return ONLY valid JSON:
                     json_str = self._huggingface_text_generate(prompt)
                     print("✅ Hugging Face design complete")
                 except Exception as e:
-                    print(f"⚠️ Hugging Face failed: {str(e)[:100]}")
+                    print(f"⚠️ Hugging Face failed: {str(e)}")
 
         # if (not json_str or len(json_str) < 50) and self.openai_api_key:
         #     try:
