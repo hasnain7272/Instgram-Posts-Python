@@ -96,13 +96,14 @@ class TrulyAIReelGenerator:
         
         # The new API uses an OpenAI-compatible payload
         payload = {
-            "model": "mistralai/Mistral-7B-Instruct-v0.1", # Specify the model here
+            "model": "Qwen/Qwen3-4B-Instruct-2507:nscale"
             "messages": [
                 {"role": "system", "content": "You are a video editor. You must return ONLY the valid JSON object, with no other text before or after."},
                 {"role": "user", "content": prompt}
             ],
             "max_tokens": 4096,
-            "temperature": 0.7
+            "temperature": 0.7,
+            "stream": false
         }
         
         # Retry logic for model loading (same as your image generator)
