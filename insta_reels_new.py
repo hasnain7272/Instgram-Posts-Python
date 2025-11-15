@@ -81,6 +81,49 @@ class TrulyAIReelGenerator:
             print("⚠️ Could not check FFmpeg filters - assuming no drawtext")
             return False
 
+    def _huggingface_text_generate(self, prompt: str) -> str:
+        """Generate JSON package using Hugging Face Inference API (Mistral)"""
+        if not self.huggingface_api_token:
+            raise Exception("Hugging Face API token required")
+        
+        # We use a model known for good instruction following
+        API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1"
+        
+        headers = {"Authorization": f"Bearer {self.huggingface_api_token}"}
+        
+        # Add a strong instruction for JSON-only output
+        hf_prompt = f"{prompt}\n\nIMPORTANT: You must return ONLY the valid JSON object, with no other text before or after."
+        
+        payload = {
+            "inputs": hf_prompt,
+            "parameters": {
+                "max_new_tokens": 4096, # Ample space for the JSON
+                "temperature": 0.7,
+                "return_full_text": False
+            }
+        }
+        
+        # Retry logic for model loading (same as your image generator)
+        for attempt in range(3):
+            response = requests.post(API_URL, headers=headers, json=payload, timeout=90)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if isinstance(data, list) and 'generated_text' in data[0]:
+                    return data[0]['generated_text']
+                else:
+                    raise Exception(f"Unexpected HF response format: {str(data)[:200]}")
+
+            elif response.status_code == 503: # Model loading
+                print(f"    ⏳ HF Text Model loading, waiting {5 * (attempt + 1)}s...")
+                time.sleep(5 * (attempt + 1))
+                continue
+            else:
+                # Don't retry on other errors
+                raise Exception(f"HuggingFace text API error: {response.status_code} {response.text[:100]}")
+        
+        raise Exception("HuggingFace text generation failed after retries")
+        
     def generate_reel(self, niche: str, num_images: int = 20, duration: int = 15):
         """Generate truly AI-driven Instagram Reel"""
         print(f"🎬 Generating AI-controlled {num_images}-image reel for {niche} ({duration}s)...")
@@ -543,6 +586,16 @@ Return ONLY valid JSON:
                     print("✅ OpenAI design complete")
             except Exception as e:
                 print(f"⚠️ OpenAI failed: {str(e)[:100]}")
+
+        # --- NEW HUGGING FACE FALLBACK ---
+        if (not json_str or len(json_str) < 50) and self.huggingface_api_token:
+            try:
+                print("🔄 Using Hugging Face...")
+                json_str = self._huggingface_text_generate(prompt)
+                print("✅ Hugging Face design complete")
+            except Exception as e:
+                print(f"⚠️ Hugging Face failed: {str(e)[:100]}")
+        # --- END OF NEW BLOCK ---
 
         if not json_str:
             raise Exception("AI generation failed")
