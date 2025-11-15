@@ -103,7 +103,7 @@ class TrulyAIReelGenerator:
             ],
             "max_tokens": 4096,
             "temperature": 0.7,
-            "stream": false
+            "stream": False
         }
         
         # Retry logic for model loading (same as your image generator)
