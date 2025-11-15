@@ -563,6 +563,12 @@ Return ONLY valid JSON:
                 print("✅ AI design complete")
             except Exception as e:
                 print(f"⚠️ Gemini failed: {str(e)[:100]}")
+                try:
+                    print("🔄 Using Hugging Face...")
+                    json_str = self._huggingface_text_generate(prompt)
+                    print("✅ Hugging Face design complete")
+                except Exception as e:
+                    print(f"⚠️ Hugging Face failed: {str(e)[:100]}")
 
         # if (not json_str or len(json_str) < 50) and self.openai_api_key:
         #     try:
@@ -588,13 +594,13 @@ Return ONLY valid JSON:
         #         print(f"⚠️ OpenAI failed: {str(e)[:100]}")
 
         # --- NEW HUGGING FACE FALLBACK ---
-        if (not json_str or len(json_str) < 50) and self.huggingface_api_token:
-            try:
-                print("🔄 Using Hugging Face...")
-                json_str = self._huggingface_text_generate(prompt)
-                print("✅ Hugging Face design complete")
-            except Exception as e:
-                print(f"⚠️ Hugging Face failed: {str(e)[:100]}")
+        # if (not json_str or len(json_str) < 50) and self.huggingface_api_token:
+        #     try:
+        #         print("🔄 Using Hugging Face...")
+        #         json_str = self._huggingface_text_generate(prompt)
+        #         print("✅ Hugging Face design complete")
+        #     except Exception as e:
+        #         print(f"⚠️ Hugging Face failed: {str(e)[:100]}")
         # --- END OF NEW BLOCK ---
 
         if not json_str:
