@@ -3,7 +3,7 @@ name: Time-Based Trending Posts
 on:
   schedule:
     # Every 2 hours (00:00, 02:00, 04:00, ... 22:00)
-    - cron: '0 */2 * * *'
+    #- cron: '0 */2 * * *'
   workflow_dispatch:
     inputs:
       num_images:
