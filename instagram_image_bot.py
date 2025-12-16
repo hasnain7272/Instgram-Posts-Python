@@ -108,14 +108,22 @@ class ImageGenerator:
     def generate_image(self, prompt: str) -> str:
         # PRIORITY 1: Pollinations (As requested)
         try:
-            print(f"   🎨 Generating with Pollinations...")
-            # Ensure prompt is URL safe
-            encoded = quote(prompt[:500]) # Truncate to prevent URL errors
-            url = f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1080&nologo=true&model=flux"
-            
-            response = requests.get(url, timeout=45)
-            if response.status_code == 200:
-                return base64.b64encode(response.content).decode('utf-8')
+            for i in range(3):
+                print(f"Generating with Pollinations... Attempt {i + 1}")
+                
+                encoded = quote(prompt[:500])  # Truncate to prevent URL errors
+                url = (
+                    f"https://image.pollinations.ai/prompt/{encoded}"
+                    f"?width=1080&height=1080&nologo=true&model=flux"
+                )
+    
+                response = requests.get(url, timeout=45)
+    
+                if response.status_code == 200 and response.content:
+                    return base64.b64encode(response.content).decode("utf-8")
+    
+                print(f"Pollinations attempt {i + 1} failed (status {response.status_code})")
+
         except Exception as e:
             print(f"   ⚠️ Pollinations Failed: {e}")
 
