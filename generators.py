@@ -61,7 +61,7 @@ class TrulyAIReelGenerator:
                 {{
                     "voiceover": "Spoken text (Conversational, under 15 words)",
                     "visual_prompt": "Cinematic 8k very ultra detailed prompt, distinct camera angle",
-                    "text_overlay": "Punchy Hook (Max 4 words)"
+                    "text_overlay": "Punchy Hook (Max 5 words)"
                 }}
             ],
             "title": "Clickbait Title",
@@ -70,7 +70,10 @@ class TrulyAIReelGenerator:
             "mood": "energetic"
         }}
         
-        Generate exactly {count} segments. Segment 1 MUST be a Visual Hook.
+        REQUIREMENTS:
+        - Generate exactly {count} segments. 
+        - Segment 1 MUST be a Visual Hook.
+        - Generate at least 20 high-traffic hashtags.
         """
 
         # 2. Attempt 1: Groq (Llama 3)
@@ -114,7 +117,7 @@ class TrulyAIReelGenerator:
         
         # Submit All
         for i, seg in enumerate(segments):
-            print(i, " --> ", seg['visual_prompt'])
+            print(f"   🔹 Seg {i} Prompt: {seg['visual_prompt'][:50]}...")
             try:
                 job_id = self._submit_to_horde(seg['visual_prompt'])
                 horde_jobs[i] = job_id
@@ -122,7 +125,7 @@ class TrulyAIReelGenerator:
                 print(f"   ⚠️ [Seg {i}] Horde Submit Error: {e}")
                 horde_jobs[i] = None
 
-        # Wait Loop (Max 120s - keep it tight)
+        # Wait Loop (Max 120s)
         start_time = time.time()
         while time.time() - start_time < 120:
             pending = [i for i in range(num_images) if results[i] is None and horde_jobs[i] is not None]
@@ -169,7 +172,6 @@ class TrulyAIReelGenerator:
         url = "https://stablehorde.net/api/v2/generate/async"
         headers = {"apikey": self.horde_api_key, "Client-Agent": self.client_agent}
         
-        # We ask for Top Tier models since we have an API Key
         full_prompt = prompt + " ### masterpiece, cinematic, 8k, photorealistic, sharp focus"
         negative = "cartoon, anime, painting, illustration, ugly, deformed, blurry, text, watermark"
         
@@ -181,11 +183,7 @@ class TrulyAIReelGenerator:
                 "width": 576, "height": 1024,
                 "cfg_scale": 6
             },
-            "models": [
-                "Juggernaut XL", 
-                "RealVisXL V4.0", 
-                "AlbedoBase XL (SDXL)"
-            ],
+            "models": ["Juggernaut XL", "RealVisXL V4.0", "AlbedoBase XL (SDXL)"],
             "nsfw": False, "censor_nsfw": False, "shared": True
         }
         
@@ -209,7 +207,6 @@ class TrulyAIReelGenerator:
         return base64.b64encode(requests.get(url, timeout=20).content).decode()
 
     def _gen_hf_flux(self, prompt):
-        # Uses Flux Schnell via HF Inference Client
         try:
             image = self.hf_client.text_to_image(
                 prompt + ", vertical 9:16 aspect ratio, high quality, 4k",
@@ -227,7 +224,7 @@ class TrulyAIReelGenerator:
         results[idx] = path
 
     # =========================================================================
-    # 3. VIDEO ASSEMBLY (Standard Pipeline)
+    # 3. VIDEO ASSEMBLY (Robust Pipeline)
     # =========================================================================
     def generate_reel(self, niche: str, num_images: int = 5):
         base_temp = tempfile.gettempdir()
@@ -239,27 +236,38 @@ class TrulyAIReelGenerator:
         data = self._generate_ai_script(niche, num_images)
         print(f"📝 Title: {data.get('title', 'Untitled')}")
         
-        # 2. Images (The Triple Layer Engine)
+        # 2. Images
         image_paths = self._generate_all_images(data['segments'], temp_dir)
         
         # 3. Clips
         clips = []
         for i, seg in enumerate(data['segments']):
-            if not image_paths.get(i): continue 
+            if not image_paths.get(i): 
+                print(f"❌ Skipping Seg {i} (Image Missing)")
+                continue 
             
             voice_path = f"{temp_dir}/voice_{i}.mp3"
             clip_path = f"{temp_dir}/clip_{i}.mp4"
             
             self._burn_text_into_image(image_paths[i], seg.get('text_overlay', ''))
             
-            try:
-                asyncio.run(edge_tts.Communicate(seg['voiceover'], "en-US-GuyNeural").save(voice_path))
-                has_voice = True
-            except: has_voice = False
+            # --- AUDIO GENERATION WITH SAFETY CHECK ---
+            has_voice = self._generate_voiceover(seg['voiceover'], voice_path)
             
-            dur = self._get_audio_duration(voice_path) + 0.2 if has_voice else 4.0
-            self._render_clip_ffmpeg(image_paths[i], voice_path if has_voice else None, dur, clip_path)
-            clips.append(clip_path)
+            # --- DURATION LOGIC ---
+            # If voice exists, match duration. If not, default to 4.0s
+            if has_voice:
+                dur = self._get_audio_duration(voice_path) + 0.2
+            else:
+                dur = 4.0
+                voice_path = None # Critical: Don't pass bad path to ffmpeg
+            
+            # --- RENDER ---
+            try:
+                self._render_clip_ffmpeg(image_paths[i], voice_path, dur, clip_path)
+                clips.append(clip_path)
+            except Exception as e:
+                print(f"❌ Clip Render Failed: {e}")
             
         if not clips: raise Exception("No clips generated.")
 
@@ -278,7 +286,21 @@ class TrulyAIReelGenerator:
                 'temp_dir': temp_dir
             }
 
-    # --- Helpers (Unchanged) ---
+    # --- Helpers ---
+    def _generate_voiceover(self, text, output_path):
+        """Generates audio and validates file size to prevent ghost files"""
+        if not text: return False
+        try:
+            asyncio.run(edge_tts.Communicate(text, VOICE_ID).save(output_path))
+            # Sanity Check: If file is < 500 bytes, it's likely corrupt/empty
+            if not os.path.exists(output_path) or os.path.getsize(output_path) < 500:
+                print(f"   ⚠️ TTS Empty File Detected. Skipping audio.")
+                return False
+            return True
+        except Exception as e:
+            print(f"   ⚠️ TTS Failed: {e}")
+            return False
+
     def _burn_text_into_image(self, img_path, text):
         if not text: return
         try:
@@ -313,12 +335,22 @@ class TrulyAIReelGenerator:
         except: pass
 
     def _render_clip_ffmpeg(self, img, audio, dur, out):
-        vf = ("scale=1080:1920:force_original_aspect_ratio=decrease,""pad=1080:1920:(ow-iw)/2:(oh-ih)/2,""zoompan=z='min(zoom+0.0015,1.5)':d=700:s=1080x1920:fps=30")
+        # FIX: Replaced 'pad=...:-1:-1' with correct centering formula
+        vf = (
+            "scale=1080:1920:force_original_aspect_ratio=decrease,"
+            "pad=1080:1920:(ow-iw)/2:(oh-ih)/2,"
+            "zoompan=z='min(zoom+0.0015,1.5)':d=700:s=1080x1920:fps=30"
+        )
+        
         cmd = ['ffmpeg', '-y', '-loop', '1', '-i', img]
         if audio: cmd.extend(['-i', audio])
+        
+        # 'ultrafast' preset ensures we don't timeout on GitHub
         cmd.extend(['-vf', vf, '-c:v', 'libx264', '-t', str(dur), '-pix_fmt', 'yuv420p', '-preset', 'ultrafast'])
+        
         if audio: cmd.append('-shortest')
         cmd.append(out)
+        
         try:
             subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         except subprocess.CalledProcessError as e:
@@ -335,7 +367,10 @@ class TrulyAIReelGenerator:
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
 
     def _get_audio_duration(self, path):
-        try: return float(subprocess.check_output(['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', path]))
+        try: 
+            if not os.path.exists(path): return 4.0
+            o = subprocess.check_output(['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', path])
+            return float(o.strip())
         except: return 4.0
 
     def _download_file(self, url, path):
