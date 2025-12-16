@@ -1,0 +1,86 @@
+name: Instagram Reel Auto Post
+
+on:
+  schedule:
+    - cron: '0 12 * * *'
+    - cron: '0 18 * * *'
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    inputs:
+      niche:
+        description: 'Reel niche (travel, food, fitness, etc.)'
+        required: false
+        default: 'fitness'
+      num_images:
+        description: 'Number of images in reel'
+        required: false
+        default: '5'
+      duration:
+        description: 'Total video duration in seconds (10-90)'
+        required: false
+        default: '10'
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - run: |
+          pip install google-generativeai requests pillow edge-tts aiofiles
+          pip install --upgrade google-auth google-auth-httplib2 google-api-python-client httplib2
+
+      - name: Download and install ffmpeg
+        run: |
+          mkdir -p $HOME/bin
+          curl -L https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz -o ffmpeg.tar.xz
+          tar -xf ffmpeg.tar.xz
+          mv ffmpeg-*-amd64-static/ffmpeg $HOME/bin/
+          echo "$HOME/bin" >> $GITHUB_PATH
+
+      - name: Set Random Niche for Scheduled Runs
+        if: github.event_name == 'schedule'
+        id: random-niche
+        run: |
+          NICHES=("fitness and include in caption to visit link https://the-aura-app.github.io/the-aura-app/" "travel and include in caption to visit link https://the-aura-app.github.io/the-aura-app/" "food and include in caption to visit link https://the-aura-app.github.io/the-aura-app/" "motivation and include in caption to visit link https://the-aura-app.github.io/the-aura-app/" "tech and include in caption to visit link https://the-aura-app.github.io/the-aura-app/" "wellness and include in caption to visit link https://the-aura-app.github.io/the-aura-app/" "women in stress to visit link (https://the-aura-app.github.io/the-aura-app/)" "women during period and pain to visit link (https://the-aura-app.github.io/the-aura-app/)")
+          SELECTED_NICHE=${NICHES[$RANDOM % ${#NICHES[@]}]}
+          echo "Selected random niche: $SELECTED_NICHE"
+          echo "niche=$SELECTED_NICHE" >> $GITHUB_OUTPUT
+
+      - name: Generate and Post Reel
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_UPLOAD_PRESET: ${{ secrets.CLOUDINARY_UPLOAD_PRESET }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+          INSTAGRAM_ACCOUNT_ID: ${{ secrets.INSTAGRAM_ACCOUNT_ID }}
+          INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+          HUGGINGFACE_API_TOKEN : ${{ secrets.HUGGINGFACE_TOKEN_1 }}
+
+          # Use random niche for scheduled runs, or manual input for dispatch
+          CLIENT_ID_YOUTUBE: ${{ secrets.CLIENT_ID_YOUTUBE }}
+          CLIENT_SECRET_YOUTUBE: ${{ secrets.CLIENT_SECRET_YOUTUBE }}
+          REFRESH_TOKEN_YOUTUBE: ${{ secrets.REFRESH_TOKEN_YOUTUBE }}
+          
+          # Use random niche for scheduled runs, or manual input for dispatch
+          REEL_NICHE: ${{ github.event_name == 'schedule' && steps.random-niche.outputs.niche || github.event.inputs.niche || 'travel' }}
+          REEL_IMAGES: ${{ github.event.inputs.num_images || '5' }}
+          REEL_DURATION: ${{ github.event.inputs.duration || '10' }}
+        run: |
+          echo "🎯 Using niche: $REEL_NICHE"
+          echo "🖼️  Images: $REEL_IMAGES | ⏱️ Duration: $REEL_DURATION"
+          python -u insta_reels.py
+
+      - name: Success
+        if: success()
+        run: echo "✅ Reel posted successfully!"
+    
+      - name: Failure
+        if: failure()
+        run: echo "❌ Failed to post reel"
