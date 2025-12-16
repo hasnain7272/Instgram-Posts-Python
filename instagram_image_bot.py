@@ -5,6 +5,7 @@ import base64
 import requests
 import hashlib
 import random
+import io
 from datetime import datetime, timedelta
 from typing import List
 from dataclasses import dataclass, asdict
@@ -17,7 +18,10 @@ from huggingface_hub import InferenceClient
 # --- CONFIGURATION ---
 def get_clean_env(key, default=None):
     val = os.getenv(key, default)
-    return val.strip() if val else None
+    if val:
+        # Aggressively strip whitespace, newlines, and quotes
+        return val.strip().replace('"', '').replace("'", "")
+    return None
 
 KEYS = {
     "GOOGLE_API_KEY": get_clean_env("GOOGLE_API_KEY"),
@@ -54,14 +58,14 @@ class PostMetadata:
     hashtags_used: List[str]
     engagement_niche: str
 
-# --- TEXT GENERATION ENGINE (Fallback Logic) ---
+# --- TEXT GENERATION ENGINE ---
 class TextEngine:
     def __init__(self):
         # 1. Setup Gemini
         if KEYS["GOOGLE_API_KEY"]:
             genai.configure(api_key=KEYS["GOOGLE_API_KEY"])
-            # Use 1.5-flash for better rate limits
-            self.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+            # Fallback to gemini-pro which is often more stable in free tier
+            self.gemini_model = genai.GenerativeModel('gemini-pro')
         
         # 2. Setup HuggingFace (Fallback)
         if KEYS["HUGGINGFACE_TOKEN"]:
@@ -73,17 +77,8 @@ class TextEngine:
         # Attempt 1: Gemini
         if KEYS["GOOGLE_API_KEY"]:
             try:
-                # Retry logic for 429 errors
-                for attempt in range(3):
-                    try:
-                        response = self.gemini_model.generate_content(prompt)
-                        return response.text.strip()
-                    except Exception as e:
-                        if "429" in str(e) or "quota" in str(e).lower():
-                            print(f"   ⚠️ Gemini Quota hit (Attempt {attempt+1}). Waiting 10s...")
-                            time.sleep(10)
-                            continue
-                        raise e
+                response = self.gemini_model.generate_content(prompt)
+                return response.text.strip()
             except Exception as e:
                 print(f"   ⚠️ Gemini Failed: {str(e)[:100]}. Switching to Fallback...")
 
@@ -116,8 +111,7 @@ class ImageGenerator:
                 prompt + ", highly detailed, 4k, instagram aesthetic",
                 model="black-forest-labs/FLUX.1-schnell"
             )
-            # Convert PIL to Base64
-            import io
+            # Safe conversion to base64
             buffered = io.BytesIO()
             image.save(buffered, format="JPEG")
             return base64.b64encode(buffered.getvalue()).decode('utf-8')
@@ -224,6 +218,7 @@ class PostHistoryManager:
         self.file_name = "post_history.json"
 
     def _sign(self, params):
+        # Exclude file/resource_type from signature
         s = '&'.join(f"{k}={v}" for k, v in sorted(params.items()) if k not in ['file', 'resource_type'])
         return hashlib.sha1((s + self.api_secret).encode('utf-8')).hexdigest()
 
@@ -261,16 +256,25 @@ class CloudinaryUploader:
     @staticmethod
     def upload(b64_img):
         ts = int(time.time())
+        
+        # Ensure clean keys
+        cloud_name = KEYS['CLOUDINARY_CLOUD_NAME']
+        api_key = KEYS['CLOUDINARY_API_KEY']
+        api_secret = KEYS['CLOUDINARY_API_SECRET']
+        preset = KEYS['CLOUDINARY_UPLOAD_PRESET']
+        
         params = {
-            'api_key': KEYS['CLOUDINARY_API_KEY'],
+            'api_key': api_key,
             'timestamp': ts,
-            'upload_preset': KEYS['CLOUDINARY_UPLOAD_PRESET']
+            'upload_preset': preset
         }
-        s = '&'.join(f"{k}={v}" for k, v in sorted(params.items())) + KEYS['CLOUDINARY_API_SECRET']
+        s = '&'.join(f"{k}={v}" for k, v in sorted(params.items())) + api_secret
         params['signature'] = hashlib.sha1(s.encode()).hexdigest()
         
         files = {'file': f"data:image/jpeg;base64,{b64_img}"}
-        url = f"[https://api.cloudinary.com/v1_1/](https://api.cloudinary.com/v1_1/){KEYS['CLOUDINARY_CLOUD_NAME']}/image/upload"
+        
+        # Explicitly strip whitespace from URL construction
+        url = f"[https://api.cloudinary.com/v1_1/](https://api.cloudinary.com/v1_1/){cloud_name.strip()}/image/upload"
         
         resp = requests.post(url, files=files, data=params)
         if resp.status_code != 200: raise Exception(f"Cloudinary: {resp.text}")
@@ -279,8 +283,9 @@ class CloudinaryUploader:
 class InstagramPublisher:
     @staticmethod
     def publish(img_url, caption):
-        base = f"[https://graph.facebook.com/v20.0/](https://graph.facebook.com/v20.0/){KEYS['INSTAGRAM_ACCOUNT_ID']}"
+        acc_id = KEYS['INSTAGRAM_ACCOUNT_ID']
         token = KEYS['INSTAGRAM_ACCESS_TOKEN']
+        base = f"[https://graph.facebook.com/v20.0/](https://graph.facebook.com/v20.0/){acc_id}"
         
         # 1. Container
         resp = requests.post(f"{base}/media", data={'image_url': img_url, 'caption': caption, 'access_token': token})
