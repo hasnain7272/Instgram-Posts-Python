@@ -6,8 +6,8 @@ import requests
 import hashlib
 import random
 import io
-import re  # Added for aggressive string cleaning
-from datetime import datetime, timedelta
+import re
+from datetime import datetime
 from typing import List
 from dataclasses import dataclass, asdict
 from urllib.parse import quote
@@ -20,11 +20,7 @@ from huggingface_hub import InferenceClient
 def get_clean_env(key, default=None):
     val = os.getenv(key, default)
     if val:
-        # 1. Strip whitespace/newlines
-        clean_val = val.strip()
-        # 2. Remove quotes if the user added them in Secrets
-        clean_val = clean_val.replace('"', '').replace("'", "")
-        return clean_val
+        return val.strip().replace('"', '').replace("'", "")
     return None
 
 KEYS = {
@@ -62,33 +58,35 @@ class PostMetadata:
     hashtags_used: List[str]
     engagement_niche: str
 
-# --- TEXT GENERATION ENGINE ---
+# --- TEXT ENGINE ---
 class TextEngine:
     def __init__(self):
-        # 1. Setup Gemini
         if KEYS["GOOGLE_API_KEY"]:
             genai.configure(api_key=KEYS["GOOGLE_API_KEY"])
-            # UPDATED: Use gemini-1.5-flash as the stable free model
-            self.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+            # Fallback list of models to try in order
+            self.models = ['gemini-1.5-flash', 'gemini-pro', 'gemini-1.5-pro-latest']
         
-        # 2. Setup HuggingFace (Fallback)
         if KEYS["HUGGINGFACE_TOKEN"]:
             self.hf_client = InferenceClient(token=KEYS["HUGGINGFACE_TOKEN"])
 
     def generate(self, prompt: str) -> str:
-        """Try Gemini -> Fail -> Try Hugging Face"""
-        
-        # Attempt 1: Gemini
+        # 1. Try Gemini Models
         if KEYS["GOOGLE_API_KEY"]:
-            try:
-                response = self.gemini_model.generate_content(prompt)
-                return response.text.strip()
-            except Exception as e:
-                print(f"   ⚠️ Gemini Failed: {str(e)[:100]}. Switching to Fallback...")
+            for model_name in self.models:
+                try:
+                    model = genai.GenerativeModel(model_name)
+                    response = model.generate_content(prompt)
+                    return response.text.strip()
+                except Exception as e:
+                    # Only print if it's not a 404 (model not found), to keep logs clean
+                    if "404" not in str(e):
+                        print(f"   ⚠️ Gemini ({model_name}) Failed: {str(e)[:50]}")
+                    continue
 
-        # Attempt 2: Hugging Face (Qwen)
+        # 2. Try Hugging Face (Fallback)
         if KEYS["HUGGINGFACE_TOKEN"]:
             try:
+                print("   🔄 Switching to HF Text...")
                 messages = [{"role": "user", "content": prompt}]
                 response = self.hf_client.chat_completion(
                     messages, 
@@ -108,30 +106,32 @@ class ImageGenerator:
             self.hf_client = InferenceClient(token=KEYS["HUGGINGFACE_TOKEN"])
 
     def generate_image(self, prompt: str) -> str:
-        # 1. Hugging Face Flux
+        # PRIORITY 1: Pollinations (As requested)
+        try:
+            print(f"   🎨 Generating with Pollinations...")
+            # Ensure prompt is URL safe
+            encoded = quote(prompt[:500]) # Truncate to prevent URL errors
+            url = f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1080&nologo=true&model=flux"
+            
+            response = requests.get(url, timeout=45)
+            if response.status_code == 200:
+                return base64.b64encode(response.content).decode('utf-8')
+        except Exception as e:
+            print(f"   ⚠️ Pollinations Failed: {e}")
+
+        # PRIORITY 2: Hugging Face Flux
         try:
             print(f"   🎨 Generating with Flux (HF)...")
             image = self.hf_client.text_to_image(
                 prompt + ", highly detailed, 4k, instagram aesthetic",
                 model="black-forest-labs/FLUX.1-schnell"
             )
-            # Safe conversion to base64
+            import io
             buffered = io.BytesIO()
             image.save(buffered, format="JPEG")
             return base64.b64encode(buffered.getvalue()).decode('utf-8')
         except Exception as e:
             print(f"   ⚠️ Flux Failed: {e}")
-
-        # 2. Pollinations (Fallback)
-        try:
-            print(f"   🎨 Generating with Pollinations...")
-            encoded = quote(prompt)
-            url = f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1080&nologo=true&model=flux"
-            response = requests.get(url, timeout=60)
-            if response.status_code == 200:
-                return base64.b64encode(response.content).decode('utf-8')
-        except Exception as e:
-            print(f"   ⚠️ Pollinations Failed: {e}")
             
         raise Exception("All image generation methods failed")
 
@@ -166,14 +166,11 @@ class InstagramPostGenerator:
         
         json_str = self.text_engine.generate(prompt)
         parsed = self._clean_json(json_str)
-        
         return [InspirationPost(**p) for p in parsed]
 
     def generate_content(self, inspiration: InspirationPost, niche: str) -> GeneratedPost:
-        # 1. Generate Image
         b64_img = self.image_generator.generate_image(inspiration.imageDescription)
         
-        # 2. Generate Caption
         prompt = f"""
         Write an engaging Instagram caption for the {niche} niche.
         Context: {inspiration.imageDescription}
@@ -197,10 +194,8 @@ class InstagramPostGenerator:
     def _clean_json(self, text):
         if '```' in text:
             text = text.split('```json')[1].split('```')[0] if '```json' in text else text.split('```')[1]
-        try:
-            return json.loads(text)
-        except:
-            return []
+        try: return json.loads(text)
+        except: return []
 
     def _get_season(self):
         m = datetime.now().month
@@ -212,7 +207,7 @@ class InstagramPostGenerator:
     def _extract_keywords(self, caption):
         return [w for w in caption.lower().split() if len(w) > 4][:10]
 
-# --- HISTORY & UPLOAD MANAGERS ---
+# --- MANAGERS ---
 class PostHistoryManager:
     def __init__(self):
         self.cloud_name = KEYS['CLOUDINARY_CLOUD_NAME']
@@ -239,12 +234,8 @@ class PostHistoryManager:
     def upload(self, history: List[PostMetadata]):
         data = json.dumps({'posts': [asdict(p) for p in history], 'updated': str(datetime.now())})
         ts = int(time.time())
-        params = {
-            'api_key': self.api_key, 'public_id': self.file_name,
-            'timestamp': ts, 'upload_preset': self.preset
-        }
+        params = {'api_key': self.api_key, 'public_id': self.file_name, 'timestamp': ts, 'upload_preset': self.preset}
         params['signature'] = self._sign(params)
-        
         files = {'file': ('history.json', data, 'application/json')}
         requests.post(f"[https://api.cloudinary.com/v1_1/](https://api.cloudinary.com/v1_1/){self.cloud_name}/raw/upload", files=files, data=params)
 
@@ -260,40 +251,30 @@ class CloudinaryUploader:
     def upload(b64_img):
         ts = int(time.time())
         
-        # --- AGGRESSIVE CLEANING ---
-        # Strip absolutely anything that isn't alphanumeric or underscore from cloud name
+        # --- FIX: STRICT URL CLEANING ---
         raw_cloud_name = KEYS['CLOUDINARY_CLOUD_NAME'] or ""
+        # Remove anything that isn't a letter or number to prevent bad URLs
         clean_cloud_name = re.sub(r'[^a-zA-Z0-9-_]', '', raw_cloud_name)
         
-        if not clean_cloud_name:
-            raise Exception("Cloudinary Cloud Name is empty or invalid after cleaning")
+        if not clean_cloud_name: raise Exception("Cloudinary Name Invalid")
 
-        api_key = KEYS['CLOUDINARY_API_KEY']
-        api_secret = KEYS['CLOUDINARY_API_SECRET']
-        preset = KEYS['CLOUDINARY_UPLOAD_PRESET']
-        
         params = {
-            'api_key': api_key,
+            'api_key': KEYS['CLOUDINARY_API_KEY'],
             'timestamp': ts,
-            'upload_preset': preset
+            'upload_preset': KEYS['CLOUDINARY_UPLOAD_PRESET']
         }
-        s = '&'.join(f"{k}={v}" for k, v in sorted(params.items())) + api_secret
+        s = '&'.join(f"{k}={v}" for k, v in sorted(params.items())) + KEYS['CLOUDINARY_API_SECRET']
         params['signature'] = hashlib.sha1(s.encode()).hexdigest()
         
+        # Explicit string cast to prevent Requests object errors
+        url = str(f"[https://api.cloudinary.com/v1_1/](https://api.cloudinary.com/v1_1/){clean_cloud_name}/image/upload")
+        
+        print(f"☁️ Uploading to Cloudinary: {url}")
+        
         files = {'file': f"data:image/jpeg;base64,{b64_img}"}
-        
-        # Construct URL with GUARANTEED clean cloud name
-        url = f"[https://api.cloudinary.com/v1_1/](https://api.cloudinary.com/v1_1/){clean_cloud_name}/image/upload"
-        
-        # Debug print to help identify issues (masking the name partly)
-        masked_url = url.replace(clean_cloud_name, clean_cloud_name[:3] + "***")
-        print(f"☁️ Uploading to: {masked_url}")
-        
         resp = requests.post(url, files=files, data=params)
         
-        if resp.status_code != 200: 
-            raise Exception(f"Cloudinary Error ({resp.status_code}): {resp.text}")
-            
+        if resp.status_code != 200: raise Exception(f"Cloudinary: {resp.text}")
         return resp.json()['secure_url']
 
 class InstagramPublisher:
@@ -303,18 +284,15 @@ class InstagramPublisher:
         token = KEYS['INSTAGRAM_ACCESS_TOKEN']
         base = f"[https://graph.facebook.com/v20.0/](https://graph.facebook.com/v20.0/){acc_id}"
         
-        # 1. Container
         resp = requests.post(f"{base}/media", data={'image_url': img_url, 'caption': caption, 'access_token': token})
         if resp.status_code != 200: raise Exception(f"IG Container: {resp.text}")
         cont_id = resp.json()['id']
         
-        # 2. Wait
         for _ in range(10):
             time.sleep(3)
             s = requests.get(f"[https://graph.facebook.com/v20.0/](https://graph.facebook.com/v20.0/){cont_id}", params={'fields': 'status_code', 'access_token': token}).json()
             if s.get('status_code') == 'FINISHED': break
             
-        # 3. Publish
         resp = requests.post(f"{base}/media_publish", data={'creation_id': cont_id, 'access_token': token})
         if resp.status_code != 200: raise Exception(f"IG Publish: {resp.text}")
         return resp.json()['id']
@@ -322,21 +300,17 @@ class InstagramPublisher:
 # --- MAIN ---
 def main():
     print("🚀 Static Image Bot Starting...")
-    
     if not KEYS['GOOGLE_API_KEY'] and not KEYS['HUGGINGFACE_TOKEN']:
-        print("❌ Missing API Keys")
-        return
+        print("❌ Missing API Keys"); return
 
     try:
         history_mgr = PostHistoryManager()
         bot = InstagramPostGenerator()
         
-        # 1. History & Niche
         history = history_mgr.download()
         niche = history_mgr.get_next_niche(history)
         print(f"🎯 Niche: {niche}")
         
-        # 2. Generate
         print("🔍 Fetching Ideas...")
         ideas = bot.fetch_inspiration(niche)
         if not ideas: raise Exception("No ideas generated")
@@ -345,25 +319,14 @@ def main():
         post = bot.generate_content(ideas[0], niche)
         print(f"📝 Caption: {post.caption[:50]}...")
         
-        # 3. Upload & Publish
         if KEYS['INSTAGRAM_ACCESS_TOKEN']:
             print("☁️ Uploading Image...")
             img_url = CloudinaryUploader.upload(post.base64Image)
-            
             print("📱 Publishing to Instagram...")
             pid = InstagramPublisher.publish(img_url, f"{post.caption}\n\n{' '.join(post.hashtags)}")
             print(f"✅ Published: {pid}")
             
-            # 4. Save History
-            meta = PostMetadata(
-                id=pid, timestamp=str(datetime.now()),
-                inspiration_source=niche,
-                image_description_hash=hashlib.md5(ideas[0].imageDescription.encode()).hexdigest(),
-                caption_keywords=bot._extract_keywords(post.caption),
-                hashtags_used=post.hashtags,
-                engagement_niche=niche
-            )
-            history.append(meta)
+            history.append(PostMetadata(id=pid, timestamp=str(datetime.now()), inspiration_source=niche, image_description_hash=hashlib.md5(ideas[0].imageDescription.encode()).hexdigest(), caption_keywords=bot._extract_keywords(post.caption), hashtags_used=post.hashtags, engagement_niche=niche))
             history_mgr.upload(history)
             
     except Exception as e:
