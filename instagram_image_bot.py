@@ -6,6 +6,7 @@ import requests
 import hashlib
 import random
 import io
+import re  # Added for aggressive string cleaning
 from datetime import datetime, timedelta
 from typing import List
 from dataclasses import dataclass, asdict
@@ -19,8 +20,11 @@ from huggingface_hub import InferenceClient
 def get_clean_env(key, default=None):
     val = os.getenv(key, default)
     if val:
-        # Aggressively strip whitespace, newlines, and quotes
-        return val.strip().replace('"', '').replace("'", "")
+        # 1. Strip whitespace/newlines
+        clean_val = val.strip()
+        # 2. Remove quotes if the user added them in Secrets
+        clean_val = clean_val.replace('"', '').replace("'", "")
+        return clean_val
     return None
 
 KEYS = {
@@ -64,8 +68,8 @@ class TextEngine:
         # 1. Setup Gemini
         if KEYS["GOOGLE_API_KEY"]:
             genai.configure(api_key=KEYS["GOOGLE_API_KEY"])
-            # Fallback to gemini-pro which is often more stable in free tier
-            self.gemini_model = genai.GenerativeModel('gemini-pro')
+            # UPDATED: Use gemini-1.5-flash as the stable free model
+            self.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
         
         # 2. Setup HuggingFace (Fallback)
         if KEYS["HUGGINGFACE_TOKEN"]:
@@ -218,7 +222,6 @@ class PostHistoryManager:
         self.file_name = "post_history.json"
 
     def _sign(self, params):
-        # Exclude file/resource_type from signature
         s = '&'.join(f"{k}={v}" for k, v in sorted(params.items()) if k not in ['file', 'resource_type'])
         return hashlib.sha1((s + self.api_secret).encode('utf-8')).hexdigest()
 
@@ -257,8 +260,14 @@ class CloudinaryUploader:
     def upload(b64_img):
         ts = int(time.time())
         
-        # Ensure clean keys
-        cloud_name = KEYS['CLOUDINARY_CLOUD_NAME']
+        # --- AGGRESSIVE CLEANING ---
+        # Strip absolutely anything that isn't alphanumeric or underscore from cloud name
+        raw_cloud_name = KEYS['CLOUDINARY_CLOUD_NAME'] or ""
+        clean_cloud_name = re.sub(r'[^a-zA-Z0-9-_]', '', raw_cloud_name)
+        
+        if not clean_cloud_name:
+            raise Exception("Cloudinary Cloud Name is empty or invalid after cleaning")
+
         api_key = KEYS['CLOUDINARY_API_KEY']
         api_secret = KEYS['CLOUDINARY_API_SECRET']
         preset = KEYS['CLOUDINARY_UPLOAD_PRESET']
@@ -273,11 +282,18 @@ class CloudinaryUploader:
         
         files = {'file': f"data:image/jpeg;base64,{b64_img}"}
         
-        # Explicitly strip whitespace from URL construction
-        url = f"[https://api.cloudinary.com/v1_1/](https://api.cloudinary.com/v1_1/){cloud_name.strip()}/image/upload"
+        # Construct URL with GUARANTEED clean cloud name
+        url = f"[https://api.cloudinary.com/v1_1/](https://api.cloudinary.com/v1_1/){clean_cloud_name}/image/upload"
+        
+        # Debug print to help identify issues (masking the name partly)
+        masked_url = url.replace(clean_cloud_name, clean_cloud_name[:3] + "***")
+        print(f"☁️ Uploading to: {masked_url}")
         
         resp = requests.post(url, files=files, data=params)
-        if resp.status_code != 200: raise Exception(f"Cloudinary: {resp.text}")
+        
+        if resp.status_code != 200: 
+            raise Exception(f"Cloudinary Error ({resp.status_code}): {resp.text}")
+            
         return resp.json()['secure_url']
 
 class InstagramPublisher:
