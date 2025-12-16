@@ -6,7 +6,8 @@ import requests
 import hashlib
 import random
 from datetime import datetime, timedelta
-from typing import List, dataclass, asdict
+from typing import List
+from dataclasses import dataclass, asdict
 from urllib.parse import quote
 
 # Libraries
@@ -20,7 +21,7 @@ def get_clean_env(key, default=None):
 
 KEYS = {
     "GOOGLE_API_KEY": get_clean_env("GOOGLE_API_KEY"),
-    "HUGGINGFACE_TOKEN": get_clean_env("HUGGINGFACE_TOKEN_1") or get_clean_env("HUGGINGFACE_TOKEN"),
+    "HUGGINGFACE_TOKEN": get_clean_env("HUGGINGFACE_TOKEN"),
     "CLOUDINARY_CLOUD_NAME": get_clean_env("CLOUDINARY_CLOUD_NAME"),
     "CLOUDINARY_API_KEY": get_clean_env("CLOUDINARY_API_KEY"),
     "CLOUDINARY_API_SECRET": get_clean_env("CLOUDINARY_API_SECRET"),
