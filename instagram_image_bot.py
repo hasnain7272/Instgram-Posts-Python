@@ -159,7 +159,7 @@ class InstagramPostGenerator:
         
         prompt = f"""
         Write engaging Instagram caption for {niche}. Context: {inspiration.imageDescription}
-        Return JSON: {{"caption": "Catchy text", "hashtags": ["#tag1", "#tag2"]}}
+        Return JSON: {{"caption": "Catchy text", "hashtags": ["#tag1", "#tag2","(20+ related hashtags)"]}}
         """
         json_str = self.text_engine.generate(prompt)
         data = self._clean_json(json_str)
@@ -309,7 +309,7 @@ def main():
             print("☁️ Uploading Image...")
             img_url = CloudinaryUploader.upload(post.base64Image)
             print("📱 Publishing to Instagram...")
-            pid = InstagramPublisher.publish(img_url, f"{post.caption}\n\n{' '.join(post.hashtags)}")
+            pid = InstagramPublisher.publish(img_url, f"{post.caption} \n follow here https://the-aura-app.github.io/the-aura-app/ \n\n{' '.join(post.hashtags)}")
             print(f"✅ Published: {pid}")
             
             history.append(PostMetadata(id=pid, timestamp=str(datetime.now()), inspiration_source=niche, image_description_hash=hashlib.md5(ideas[0].imageDescription.encode()).hexdigest(), caption_keywords=bot._extract_keywords(post.caption), hashtags_used=post.hashtags, engagement_niche=niche))
