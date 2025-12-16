@@ -134,6 +134,8 @@ class TrulyAIReelGenerator:
             "shared": True
         }
         
+        print(full_prompt + " ### " + negative_prompt)
+        
         resp = requests.post(url, json=payload, headers=headers)
         
         # 4. ROBUST ERROR HANDLING
