@@ -106,6 +106,7 @@ def main():
     # 1. Generate Content
     gen = TrulyAIReelGenerator(KEYS)
     niche = os.getenv('REEL_NICHE', 'Mind blowing facts')
+    num_images = int(os.getenv('REEL_IMAGES', '5'))    
     
     try:
         result = gen.generate_reel(niche, num_images=5)
