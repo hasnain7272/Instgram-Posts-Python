@@ -267,7 +267,7 @@ class CloudinaryUploader:
         params['signature'] = hashlib.sha1(s.encode()).hexdigest()
         
         # Explicit string cast to prevent Requests object errors
-        url = str(f"[https://api.cloudinary.com/v1_1/](https://api.cloudinary.com/v1_1/){clean_cloud_name}/image/upload")
+        url = str(f"https://api.cloudinary.com/v1_1/{clean_cloud_name}/image/upload")
         
         print(f"☁️ Uploading to Cloudinary: {url}")
         
