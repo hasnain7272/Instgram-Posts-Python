@@ -1,4 +1,4 @@
-name: Instagram Reel Auto Post
+name: Instagram Reels
 
 on:
   schedule:
