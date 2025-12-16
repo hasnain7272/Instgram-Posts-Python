@@ -109,7 +109,7 @@ def main():
     num_images = int(os.getenv('REEL_IMAGES', '5'))    
     
     try:
-        result = gen.generate_reel(niche, num_images=5)
+        result = gen.generate_reel(niche, num_images)
     except Exception as e:
         print(f"❌ Generation Failed: {e}")
         return
