@@ -20,7 +20,7 @@ jobs:
       # CRITICAL UPDATE: Added huggingface_hub here
       - run: pip install google-generativeai requests huggingface_hub
 
-      - run: python instagram_bot.py
+      - run: python instagram_image_bot.py
         env:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
