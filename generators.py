@@ -186,7 +186,7 @@ class TrulyAIReelGenerator:
                 "RealVisXL V4.0", 
                 "AlbedoBase XL (SDXL)"
             ],
-            "nsfw": False, "censor_nsfw": True, "shared": True
+            "nsfw": False, "censor_nsfw": False, "shared": True
         }
         
         resp = requests.post(url, json=payload, headers=headers)
