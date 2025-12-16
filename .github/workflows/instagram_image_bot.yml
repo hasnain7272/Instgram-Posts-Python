@@ -19,6 +19,7 @@ jobs:
           
       # CRITICAL UPDATE: Added huggingface_hub here
       - run: pip install google-generativeai requests huggingface_hub pillow
+      - run: pip install --upgrade google-generativeai requests huggingface_hub pillow
 
       - run: python instagram_image_bot.py
         env:
