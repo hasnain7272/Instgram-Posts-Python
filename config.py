@@ -24,6 +24,7 @@ KEYS = {
     "REPLICATE_API_TOKEN": get_clean_env("REPLICATE_API_TOKEN"),
     "HUGGINGFACE_API_TOKEN": get_clean_env("HUGGINGFACE_API_TOKEN"),
     "GROQ_API_KEY": get_clean_env("GROQ_API_KEY"),
+    "HORDE_API_KEY": get_clean_env("HORDE_API_KEY"),
     
     # YouTube Keys
     "CLIENT_ID_YOUTUBE": get_clean_env("CLIENT_ID_YOUTUBE"),
