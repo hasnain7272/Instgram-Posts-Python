@@ -1,86 +1,106 @@
-name: Instagram Reels
+name: AI Viral Content Engine
 
 on:
   schedule:
-    - cron: '0 12 * * *'
-    - cron: '0 18 * * *'
-    - cron: '0 0 * * *'
+    - cron: '0 12 * * *' # 12:00 PM UTC
+    - cron: '0 18 * * *' # 6:00 PM UTC
+    - cron: '0 0 * * *'  # 12:00 AM UTC
   workflow_dispatch:
     inputs:
       niche:
-        description: 'Reel niche (travel, food, fitness, etc.)'
+        description: 'Reel niche (facts, history, scary, etc.)'
         required: false
-        default: 'fitness'
+        default: 'psychological facts'
       num_images:
-        description: 'Number of images in reel'
+        description: 'Number of segments'
         required: false
         default: '5'
-      duration:
-        description: 'Total video duration in seconds (10-90)'
-        required: false
-        default: '10'
 
 jobs:
   post:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      
       - uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
-      - run: |
-          pip install google-generativeai google-api-python-client google-auth-httplib2 google-auth-oauthlib requests edge-tts huggingface_hub pillow aiofiles
-          pip install --upgrade google-auth google-auth-httplib2 google-api-python-client httplib2
-
-      - name: Download and install ffmpeg
+      # 1. Install System Dependencies (FFmpeg & Fonts)
+      - name: Install FFmpeg & Fonts
         run: |
+          # Install FFmpeg
           mkdir -p $HOME/bin
           curl -L https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz -o ffmpeg.tar.xz
           tar -xf ffmpeg.tar.xz
           mv ffmpeg-*-amd64-static/ffmpeg $HOME/bin/
           echo "$HOME/bin" >> $GITHUB_PATH
+          
+          # Install Fonts for PIL (Image Text)
+          sudo apt-get update
+          sudo apt-get install -y fonts-dejavu fonts-liberation
 
-      - name: Set Random Niche for Scheduled Runs
-        if: github.event_name == 'schedule'
-        id: random-niche
+      # 2. Install Python Libraries
+      - name: Install Dependencies
         run: |
-          NICHES=("fitness and include in caption to visit link https://the-aura-app.github.io/the-aura-app/" "travel and include in caption to visit link https://the-aura-app.github.io/the-aura-app/" "food and include in caption to visit link https://the-aura-app.github.io/the-aura-app/" "motivation and include in caption to visit link https://the-aura-app.github.io/the-aura-app/" "tech and include in caption to visit link https://the-aura-app.github.io/the-aura-app/" "wellness and include in caption to visit link https://the-aura-app.github.io/the-aura-app/" "women in stress to visit link (https://the-aura-app.github.io/the-aura-app/)" "women during period and pain to visit link (https://the-aura-app.github.io/the-aura-app/)")
-          SELECTED_NICHE=${NICHES[$RANDOM % ${#NICHES[@]}]}
-          echo "Selected random niche: $SELECTED_NICHE"
-          echo "niche=$SELECTED_NICHE" >> $GITHUB_OUTPUT
+          pip install --upgrade pip
+          pip install google-generativeai google-api-python-client google-auth-httplib2 google-auth-oauthlib
+          pip install requests edge-tts huggingface_hub pillow aiofiles
 
-      - name: Generate and Post Reel
+      # 3. Select Niche (Random for Schedule vs Manual for Dispatch)
+      - name: Set Niche
+        id: niche-selector
+        run: |
+          if [ "${{ github.event_name }}" == "schedule" ]; then
+            NICHES=(
+              "psychological facts and visit https://the-aura-app.github.io/"
+              "scary stories and visit https://the-aura-app.github.io/"
+              "mind blowing history and visit https://the-aura-app.github.io/"
+              "deep motivation and visit https://the-aura-app.github.io/"
+              "future tech and visit https://the-aura-app.github.io/"
+              "wellness tips and visit https://the-aura-app.github.io/"
+              "women health facts and visit https://the-aura-app.github.io/"
+            )
+            SELECTED_NICHE=${NICHES[$RANDOM % ${#NICHES[@]}]}
+            echo "niche=$SELECTED_NICHE" >> $GITHUB_OUTPUT
+          else
+            echo "niche=${{ github.event.inputs.niche }}" >> $GITHUB_OUTPUT
+          fi
+
+      # 4. Run the AI Engine
+      - name: Generate & Publish
         env:
+          # AI Keys
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          HUGGINGFACE_API_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN_1 }}
+          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+          
+          # Social Keys
           CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
           CLOUDINARY_UPLOAD_PRESET: ${{ secrets.CLOUDINARY_UPLOAD_PRESET }}
           CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
           CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
           INSTAGRAM_ACCOUNT_ID: ${{ secrets.INSTAGRAM_ACCOUNT_ID }}
           INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
-          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
-          HUGGINGFACE_API_TOKEN : ${{ secrets.HUGGINGFACE_TOKEN_1 }}
-
-          # Use random niche for scheduled runs, or manual input for dispatch
+          
+          # YouTube Keys
           CLIENT_ID_YOUTUBE: ${{ secrets.CLIENT_ID_YOUTUBE }}
           CLIENT_SECRET_YOUTUBE: ${{ secrets.CLIENT_SECRET_YOUTUBE }}
           REFRESH_TOKEN_YOUTUBE: ${{ secrets.REFRESH_TOKEN_YOUTUBE }}
           
-          # Use random niche for scheduled runs, or manual input for dispatch
-          REEL_NICHE: ${{ github.event_name == 'schedule' && steps.random-niche.outputs.niche || github.event.inputs.niche || 'travel' }}
+          # Inputs
+          REEL_NICHE: ${{ steps.niche-selector.outputs.niche }}
           REEL_IMAGES: ${{ github.event.inputs.num_images || '5' }}
-          REEL_DURATION: ${{ github.event.inputs.duration || '10' }}
         run: |
-          echo "🎯 Using niche: $REEL_NICHE"
-          echo "🖼️  Images: $REEL_IMAGES | ⏱️ Duration: $REEL_DURATION"
-          python -u insta_reels.py
+          echo "🚀 Starting Engine..."
+          echo "🎯 Niche: $REEL_NICHE"
+          python -u main.py
 
-      - name: Success
+      - name: Notification
         if: success()
-        run: echo "✅ Reel posted successfully!"
-    
-      - name: Failure
+        run: echo "✅ Viral Content Posted Successfully!"
+
+      - name: Failure Handler
         if: failure()
-        run: echo "❌ Failed to post reel"
+        run: echo "❌ Something went wrong. Check the logs above."
