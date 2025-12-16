@@ -1,19 +1,25 @@
-name: Instagram Bot
+name: Instagram Image Bot
+
 on:
   schedule:
     - cron: '0 9 * * *'   # 9 AM UTC
     - cron: '0 15 * * *'  # 3 PM UTC  
     - cron: '0 21 * * *'  # 9 PM UTC
   workflow_dispatch:  # Manual trigger
+
 jobs:
   post:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      
       - uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-      - run: pip install google-generativeai requests
+          
+      # CRITICAL UPDATE: Added huggingface_hub here
+      - run: pip install google-generativeai requests huggingface_hub
+
       - run: python instagram_bot.py
         env:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
@@ -23,4 +29,5 @@ jobs:
           CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
           INSTAGRAM_ACCOUNT_ID: ${{ secrets.INSTAGRAM_ACCOUNT_ID }}
           INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
-          HUGGINGFACE_TOKEN : ${{ secrets.HUGGINGFACE_TOKEN_1 }}
+          # This maps your GitHub Secret to the Env Var the script expects
+          HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN_1 }}
