@@ -16,79 +16,95 @@ import edge_tts
 from groq import Groq
 from config import MUSIC_LIBRARY, VOICE_ID
 
-class BatchTrulyAIReelGenerator:
+class TrulyAIReelGenerator:
     def __init__(self, keys: dict):
+        """
+        Initialize with Pro Features (Groq + AI Horde + Pollinations Fallback)
+        keys: {'GROQ_API_KEY': '...', 'HORDE_API_KEY': '...'}
+        """
         self.keys = keys
+        
+        # 1. Initialize Groq (Scripting)
         if self.keys.get("GROQ_API_KEY"):
             self.groq_client = Groq(api_key=self.keys["GROQ_API_KEY"])
-        
-        self.horde_api_key = self.keys.get("HORDE_API_KEY", "0000000000")
-        self.client_agent = "TrulyAI_Bot:v4.0:github.com/batch-mode"
+        else:
+            print("⚠️ Warning: GROQ_API_KEY missing.")
 
-    # --- 1. SCRIPT GENERATION (Unchanged) ---
+        # 2. Horde Setup (Images)
+        self.horde_api_key = self.keys.get("HORDE_API_KEY", "0000000000")
+        self.client_agent = "TrulyAI_Bot:v5.0:production"
+
+    # --- 1. AI Script Generation (Groq / Llama 3) ---
     def _generate_ai_script(self, niche: str, count: int) -> dict:
         print(f"🤖 Generating Viral Script for: {niche}...")
+        
         prompt = f"""
-        You are a viral content expert. Create a Reel script for: {niche}.
-        Strict JSON output only.
-        Structure:
+        You are an Instagram algorithm expert. Write a viral Reel script for: {niche}.
+        
+        CRITICAL REQUIREMENTS:
+        1. Start with a "Visual Hook".
+        2. Generate 30 high-traffic hashtags.
+        3. Create exactly {count} segments.
+        
+        Return STRICT JSON:
         {{
             "segments": [
                 {{
-                    "voiceover": "Spoken text (short)",
-                    "visual_prompt": "Cinematic 8k photo of...",
-                    "text_overlay": "Punchy Hook"
+                    "voiceover": "Spoken text (under 15 words)",
+                    "visual_prompt": "Detailed photorealistic image prompt, 8k, cinematic",
+                    "text_overlay": "Short punchy text"
                 }}
             ],
-            "title": "Title",
-            "mood": "energetic"
+            "title": "Clickbait YouTube Title",
+            "caption": "Engaging caption",
+            "hashtags": ["#tag1", "#tag2"],
+            "description": "YouTube description",
+            "tags": "tag1, tag2, tag3",
+            "mood": "energetic", 
+            "category_id": "22"
         }}
-        Generate exactly {count} segments.
         """
+        
         try:
-            chat = self.groq_client.chat.completions.create(
+            chat_completion = self.groq_client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
                 model="llama-3.3-70b-versatile",
                 temperature=0.7,
             )
-            return self._parse_json(chat.choices[0].message.content.strip())
+            json_str = chat_completion.choices[0].message.content.strip()
+            return self._parse_json(json_str)
         except Exception as e:
-            raise Exception(f"Script Gen Failed: {e}")
+            raise Exception(f"❌ Script Generation Failed: {e}")
 
-    # =========================================================================
-    # 2. THE SMART BATCH IMAGE GENERATOR (Quality First -> Speed Fallback)
-    # =========================================================================
+    # --- 2. Batch Image Generation (Horde -> Wait -> Pollinations) ---
     def _generate_all_images(self, segments, temp_dir):
         """
-        1. Submits ALL prompts to Horde.
-        2. Waits X minutes.
-        3. If any fail/timeout, fills gaps with Pollinations.
+        Orchestrates the image generation strategy.
+        Returns a dict: {index: "path/to/image.jpg"}
         """
         num_images = len(segments)
-        results = {i: None for i in range(num_images)} # Stores paths: {0: 'path', 1: None...}
-        horde_jobs = {} # {index: job_id}
+        results = {i: None for i in range(num_images)}
+        horde_jobs = {} 
         
         print(f"🚀 Phase 1: Submitting {num_images} jobs to AI Horde...")
 
-        # --- STEP A: SUBMIT TO HORDE ---
-        # We do this sequentially or parallel, submitting is fast.
+        # A. Submit to Horde
         for i, seg in enumerate(segments):
             try:
                 job_id = self._submit_to_horde(seg['visual_prompt'])
                 horde_jobs[i] = job_id
                 print(f"   🔹 [Seg {i}] Submitted to Horde (ID: {job_id})")
             except Exception as e:
-                print(f"   ⚠️ [Seg {i}] Horde Submit Failed ({e}). Will wait for fallback.")
+                print(f"   ⚠️ [Seg {i}] Horde Submit Error. Will use fallback.")
                 horde_jobs[i] = None
 
-        # --- STEP B: POLL HORDE (The "Wait" Phase) ---
-        # We wait up to 180 seconds (3 mins) for high quality
-        MAX_WAIT = 180 
+        # B. Wait Loop (Max 180s)
+        MAX_WAIT = 180
         start_time = time.time()
-        
-        print(f"⏳ Phase 2: Waiting up to {MAX_WAIT}s for Horde workers...")
+        print(f"⏳ Phase 2: Waiting up to {MAX_WAIT}s for Horde...")
         
         while time.time() - start_time < MAX_WAIT:
+            # Check only pending jobs
             pending = [i for i in range(num_images) if results[i] is None and horde_jobs[i] is not None]
             
             if not pending:
@@ -100,29 +116,24 @@ class BatchTrulyAIReelGenerator:
                 
                 if status == 'DONE':
                     print(f"   ✅ [Seg {i}] Horde Delivered!")
-                    # Save immediately
                     path = f"{temp_dir}/img_{i}.jpg"
                     with open(path, "wb") as f: f.write(base64.b64decode(img_b64))
                     results[i] = path
                 elif status == 'FAILED':
-                    print(f"   ❌ [Seg {i}] Horde Job Faulted. Queuing for fallback.")
-                    horde_jobs[i] = None # Stop checking this one
+                    print(f"   ❌ [Seg {i}] Horde Job Failed. Queuing for fallback.")
+                    horde_jobs[i] = None # Stop checking
             
-            time.sleep(5) # Poll every 5 seconds
+            time.sleep(5) 
 
-        # --- STEP C: FILL GAPS WITH POLLINATIONS (The "Cleanup" Phase) ---
-        missing_indices = [i for i, path in results.items() if path is None]
-        
-        if missing_indices:
-            print(f"💨 Phase 3: {len(missing_indices)} images missing. Rush ordering via Pollinations...")
-            
-            # Run Pollinations in parallel for speed
+        # C. Pollinations Fallback (Fill Gaps)
+        missing = [i for i, path in results.items() if path is None]
+        if missing:
+            print(f"💨 Phase 3: {len(missing)} images missing. Rush ordering via Pollinations...")
             with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
                 future_to_idx = {
                     executor.submit(self._generate_pollinations, segments[i]['visual_prompt']): i 
-                    for i in missing_indices
+                    for i in missing
                 }
-                
                 for future in concurrent.futures.as_completed(future_to_idx):
                     idx = future_to_idx[future]
                     try:
@@ -136,80 +147,65 @@ class BatchTrulyAIReelGenerator:
 
         return results
 
-    # --- HORDE HELPER METHODS ---
+    # --- Internal API Helpers ---
     def _submit_to_horde(self, prompt):
         url = "https://stablehorde.net/api/v2/generate/async"
         headers = {"apikey": self.horde_api_key, "Client-Agent": self.client_agent}
         payload = {
             "prompt": prompt + " ### vertical, 9:16 aspect ratio, cinematic, 8k",
-            "params": {"steps": 25, "width": 576, "height": 1024, "toggles": [1, 4]}, # Toggles ensure we get the URL
+            "params": {"steps": 25, "width": 576, "height": 1024, "toggles": [1, 4]},
             "models": ["AlbedoBase XL (SDXL)", "SDXL 1.0"],
             "nsfw": False, "censor_nsfw": True
         }
         resp = requests.post(url, json=payload, headers=headers)
-        if resp.status_code != 202: raise Exception(f"Status {resp.status_code}")
+        if resp.status_code != 202: raise Exception("Status != 202")
         return resp.json()['id']
 
     def _check_horde_status(self, job_id):
         try:
-            # Check Status
-            stat_url = f"https://stablehorde.net/api/v2/generate/check/{job_id}"
-            stat = requests.get(stat_url).json()
-            
-            if stat.get('faulted', False) or stat.get('is_possible', True) == False:
-                return 'FAILED', None
-                
+            stat = requests.get(f"https://stablehorde.net/api/v2/generate/check/{job_id}").json()
+            if stat.get('faulted') or stat.get('is_possible') == False: return 'FAILED', None
             if stat['done'] == 1:
-                # Retrieve
-                final_url = f"https://stablehorde.net/api/v2/generate/status/{job_id}"
-                final = requests.get(final_url).json()
+                final = requests.get(f"https://stablehorde.net/api/v2/generate/status/{job_id}").json()
                 img_url = final['generations'][0]['img']
                 return 'DONE', base64.b64encode(requests.get(img_url).content).decode()
-            
             return 'WAITING', None
-        except:
-            return 'FAILED', None
+        except: return 'FAILED', None
 
-    # --- POLLINATIONS HELPER METHOD ---
     def _generate_pollinations(self, prompt):
         encoded = quote(prompt + " vertical cinematic 8k")
         seed = random.randint(1, 999999)
         url = f"https://image.pollinations.ai/prompt/{encoded}?width=720&height=1280&nologo=true&seed={seed}&model=flux"
-        resp = requests.get(url, timeout=25)
-        if resp.status_code == 200:
-            return base64.b64encode(resp.content).decode()
-        raise Exception("Pollinations API Error")
+        resp = requests.get(url, timeout=30)
+        if resp.status_code == 200: return base64.b64encode(resp.content).decode()
+        raise Exception("Pollinations Error")
 
-    # =========================================================================
-    # 3. MAIN PIPELINE (Simplified to use Batch Image Gen)
-    # =========================================================================
+    # --- 3. Main Pipeline ---
     def generate_reel(self, niche: str, num_images: int = 5):
         base_temp = tempfile.gettempdir()
         session_id = f"reel_{int(time.time())}"
         temp_dir = f"{base_temp}/{session_id}"
         os.makedirs(temp_dir, exist_ok=True)
         
-        # 1. Script
+        # 1. Get Script
         data = self._generate_ai_script(niche, num_images)
-        print(f"📝 Script Ready: {len(data['segments'])} segments")
+        print(f"📝 Title: {data.get('title', 'Untitled')}")
         
-        # 2. BATCH IMAGES (The new logic)
+        # 2. Batch Generate Images
         image_paths = self._generate_all_images(data['segments'], temp_dir)
         
-        # 3. Process Clips (Audio + Stitch)
+        # 3. Build Clips
         clips = []
         for i, seg in enumerate(data['segments']):
-            if not image_paths.get(i):
-                print(f"❌ Skipping segment {i} (No image generated)")
-                continue
-                
+            if not image_paths.get(i): continue # Skip if image failed
+            
             voice_path = f"{temp_dir}/voice_{i}.mp3"
             clip_path = f"{temp_dir}/clip_{i}.mp4"
             
             # Burn Text
             self._burn_text_into_image(image_paths[i], seg.get('text_overlay', ''))
             
-            # Audio
+            # Voice
             try:
                 asyncio.run(edge_tts.Communicate(seg['voiceover'], "en-US-GuyNeural").save(voice_path))
                 has_voice = True
@@ -219,19 +215,32 @@ class BatchTrulyAIReelGenerator:
             dur = self._get_audio_duration(voice_path) + 0.2 if has_voice else 3.0
             self._render_clip_ffmpeg(image_paths[i], voice_path if has_voice else None, dur, clip_path)
             clips.append(clip_path)
+            
+        if not clips: raise Exception("No clips generated.")
 
-        if not clips: raise Exception("No clips generated")
-
-        # 4. Stitch
+        # 4. Stitch & Mix
         final_path = f"{temp_dir}/reel.mp4"
         music_url = random.choice(MUSIC_LIBRARY.get(data.get('mood', 'upbeat'), MUSIC_LIBRARY['upbeat']))
         music_path = self._download_file(music_url, f"{temp_dir}/music.mp3")
+        
         self._stitch_videos(clips, music_path, final_path, temp_dir)
         
         with open(final_path, 'rb') as f:
-            return {'video_base64': base64.b64encode(f.read()).decode(), 'temp_dir': temp_dir}
+            video_b64 = base64.b64encode(f.read()).decode()
+            
+        # 5. Return Original Structure
+        return {
+            'video_base64': video_b64,
+            'caption': data.get('caption', ''),
+            'hashtags': data.get('hashtags', []),
+            'title': data.get('title', ''),
+            'description': data.get('description', ''),
+            'tags': data.get('tags', ''),
+            'category_id': data.get('category_id', '22'),
+            'temp_dir': temp_dir
+        }
 
-    # --- HELPERS (Standard) ---
+    # --- Helpers (Unchanged) ---
     def _burn_text_into_image(self, img_path, text):
         if not text: return
         try:
@@ -239,13 +248,10 @@ class BatchTrulyAIReelGenerator:
             draw = ImageDraw.Draw(img)
             try: font = ImageFont.truetype("arial.ttf", 60)
             except: font = ImageFont.load_default()
-            
-            # Simple bottom-center text
             W, H = img.size
             bbox = draw.textbbox((0, 0), text, font=font)
             w = bbox[2] - bbox[0]
             x, y = (W - w)/2, H - 400
-            
             draw.text((x+3, y+3), text, font=font, fill="black")
             draw.text((x, y), text, font=font, fill="white")
             img.save(img_path)
@@ -266,7 +272,7 @@ class BatchTrulyAIReelGenerator:
             for c in clips: f.write(f"file '{c}'\n")
         vid = f"{temp_dir}/vid.mp4"
         subprocess.run(['ffmpeg', '-y', '-f', 'concat', '-safe', '0', '-i', list_path, '-c', 'copy', vid], check=True, stdout=subprocess.DEVNULL)
-        cmd = ['ffmpeg', '-y', '-i', vid, '-i', music, '-filter_complex', '[1:a]volume=0.1[bg];[0:a][bg]amix=inputs=2:duration=first', '-c:v', 'copy', out]
+        cmd = ['ffmpeg', '-y', '-i', vid, '-i', music, '-filter_complex', '[1:a]volume=0.15[bg];[0:a][bg]amix=inputs=2:duration=first', '-c:v', 'copy', out]
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
 
     def _get_audio_duration(self, path):
