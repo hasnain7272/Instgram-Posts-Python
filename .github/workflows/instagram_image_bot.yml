@@ -18,7 +18,7 @@ jobs:
           python-version: '3.11'
           
       # CRITICAL UPDATE: Added huggingface_hub here
-      - run: pip install google-generativeai requests huggingface_hub
+      - run: pip install google-generativeai requests huggingface_hub pillow
 
       - run: python instagram_image_bot.py
         env:
@@ -29,5 +29,4 @@ jobs:
           CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
           INSTAGRAM_ACCOUNT_ID: ${{ secrets.INSTAGRAM_ACCOUNT_ID }}
           INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
-          # This maps your GitHub Secret to the Env Var the script expects
           HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN_1 }}
