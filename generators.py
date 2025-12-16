@@ -60,7 +60,7 @@ class TrulyAIReelGenerator:
             "segments": [
                 {{
                     "voiceover": "Spoken text (Conversational, under 15 words)",
-                    "visual_prompt": "Cinematic 8k detailed prompt, distinct camera angle",
+                    "visual_prompt": "Cinematic 8k very ultra detailed prompt, distinct camera angle",
                     "text_overlay": "Punchy Hook (Max 4 words)"
                 }}
             ],
@@ -114,7 +114,7 @@ class TrulyAIReelGenerator:
         
         # Submit All
         for i, seg in enumerate(segments):
-            print(seg['visual_prompt'])
+            print(i, " --> ", seg['visual_prompt'])
             try:
                 job_id = self._submit_to_horde(seg['visual_prompt'])
                 horde_jobs[i] = job_id
