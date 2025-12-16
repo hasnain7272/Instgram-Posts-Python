@@ -44,8 +44,10 @@ jobs:
       - name: Install Dependencies
         run: |
           pip install --upgrade pip
+          # Upgrade requests first to prevent "No connection adapter" errors
+          pip install --upgrade requests urllib3
           pip install google-generativeai google-api-python-client google-auth-httplib2 google-auth-oauthlib
-          pip install requests edge-tts huggingface_hub pillow aiofiles
+          pip install edge-tts huggingface_hub pillow aiofiles
 
       # 3. Select Niche (Random for Schedule vs Manual for Dispatch)
       - name: Set Niche
