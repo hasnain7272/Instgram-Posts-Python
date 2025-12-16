@@ -313,14 +313,18 @@ class TrulyAIReelGenerator:
         except: pass
 
     def _render_clip_ffmpeg(self, img, audio, dur, out):
-        vf = "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:-1:-1,zoompan=z='min(zoom+0.0015,1.5)':d=700:s=1080x1920:fps=30"
+        vf = ("scale=1080:1920:force_original_aspect_ratio=decrease,""pad=1080:1920:(ow-iw)/2:(oh-ih)/2,""zoompan=z='min(zoom+0.0015,1.5)':d=700:s=1080x1920:fps=30")
         cmd = ['ffmpeg', '-y', '-loop', '1', '-i', img]
         if audio: cmd.extend(['-i', audio])
         cmd.extend(['-vf', vf, '-c:v', 'libx264', '-t', str(dur), '-pix_fmt', 'yuv420p', '-preset', 'ultrafast'])
         if audio: cmd.append('-shortest')
         cmd.append(out)
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-
+        try:
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        except subprocess.CalledProcessError as e:
+            print(f"🔥 FFmpeg Error: {e.stderr.decode()}")
+            raise
+            
     def _stitch_videos(self, clips, music, out, temp_dir):
         list_path = f"{temp_dir}/list.txt"
         with open(list_path, 'w') as f:
