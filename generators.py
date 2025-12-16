@@ -22,7 +22,7 @@ class TrulyAIReelGenerator:
         Initialize the Zero-Budget Production Engine.
         keys: {
             "GROQ_API_KEY": "gsk_...", 
-            "HORDE_API_KEY": "..." (Optional, defaults to '0000000000')
+            "HORDE_API_KEY": "..." (Optional, but recommended. Default '0000000000' is anonymous)
         }
         """
         self.keys = keys
@@ -34,8 +34,9 @@ class TrulyAIReelGenerator:
             print("⚠️ Warning: GROQ_API_KEY missing. Script generation will fail.")
 
         # 2. Horde Configuration (The Image Engine)
+        # '0000000000' is the anonymous key. 
         self.horde_api_key = self.keys.get("HORDE_API_KEY", "0000000000")
-        self.client_agent = "TrulyAI_Bot:v7.0:production-quality"
+        self.client_agent = "TrulyAI_Bot:v8.0:anon-optimized"
 
     # =========================================================================
     # 1. HIGH-RETENTION SCRIPT GENERATION (Groq / Llama 3)
@@ -72,7 +73,7 @@ class TrulyAIReelGenerator:
             ],
             "title": "Clickbait Title (High CTR)",
             "caption": "Engaging caption with hooks",
-            "hashtags": ["#tag1", "#tag2", ...],
+            "hashtags": ["#tag1", "#tag2", ...](at least 20),
             "mood": "energetic"
         }}
         
@@ -82,7 +83,7 @@ class TrulyAIReelGenerator:
         try:
             chat_completion = self.groq_client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
-                model="llama-3.3-70b-versatile", # Best free model for logic
+                model="llama-3.3-70b-versatile",
                 temperature=0.7,
             )
             json_str = chat_completion.choices[0].message.content.strip()
@@ -92,75 +93,77 @@ class TrulyAIReelGenerator:
             raise Exception(f"❌ Script Generation Failed: {e}")
 
     # =========================================================================
-    # 2. HIGH-FIDELITY IMAGE ENGINE (Horde -> Dynamic Wait -> Pollinations)
+    # 2. ANONYMOUS-OPTIMIZED IMAGE ENGINE
     # =========================================================================
     def _submit_to_horde(self, prompt):
         url = "https://stablehorde.net/api/v2/generate/async"
         headers = {"apikey": self.horde_api_key, "Client-Agent": self.client_agent}
         
-        # 1. THE MAGIC SAUCE: Better Keywords for Photorealism
-        quality_boost = " ### masterpiece, cinematic lighting, 8k, hyperrealistic, highly detailed, sharp focus, 35mm photography"
+        # 1. OPTIMIZED PROMPT FOR ANONYMOUS MODELS
+        # AlbedoBase loves "cinematic" and "photo" keywords
+        quality_boost = " ### masterpiece, cinematic, 8k, photorealistic, sharp focus, detailed texture"
         full_prompt = prompt + quality_boost
 
-        # 2. THE NEGATIVE PROMPT (Removes "AI Look")
-        negative_prompt = "cartoon, anime, painting, illustration, ugly, deformed, blurry, low quality, pixelated, distorted faces, bad anatomy, watermark, text, signature"
+        # 2. NEGATIVE PROMPT
+        negative_prompt = "cartoon, anime, painting, illustration, ugly, deformed, blurry, low quality, pixelated, text, watermark"
 
-        # 3. TOP-TIER MODEL LIST (Prioritized)
-        high_quality_models = [
-            "Juggernaut XL",        # #1 for cinematic realism
-            "RealVisXL V4.0",       # #2 for photo-realism
-            "DreamShaper XL",       # Great artistic realism
-            "AlbedoBase XL (SDXL)", # Solid all-rounder
-            "Realistic Vision V6.0 B1" 
+        # 3. ANONYMOUS-FRIENDLY MODEL LIST
+        # We prioritize models that are widely hosted by free workers.
+        # "AlbedoBase XL" is the king of free quality. 
+        # "ICBINP" (I Can't Believe It's Not Photography) is the backup.
+        primary_models = [
+            "AlbedoBase XL (SDXL)", 
+            "ICBINP XL",
+            "RealVisXL V4.0" # Sometimes avail for anon, worth a shot
         ]
 
         payload = {
             "prompt": full_prompt + " ### " + negative_prompt,
             "params": {
-                "sampler_name": "k_dpmpp_2m", # Sharper details
-                "toggles": [1, 4],            # Downloadable
-                "cfg_scale": 6,               # Lower scale = more realistic
-                "steps": 30,                  # Cleaner image
-                "width": 576,                 # 9:16 safe width
+                "sampler_name": "k_dpmpp_2m", 
+                "toggles": [1, 4], 
+                "cfg_scale": 6,
+                "steps": 25,     # <--- LOWERED TO 25 (Crucial for Anon Access)
+                "width": 576,    # 9:16 safe width
                 "height": 1024
             },
             "nsfw": False,
             "censor_nsfw": True,
-            "models": high_quality_models,
+            "models": primary_models,
             "r2": True,
             "shared": True
         }
         
         resp = requests.post(url, json=payload, headers=headers)
         
-        if resp.status_code != 202: 
-            # Fallback if specific models are overloaded
-            print(f"   ⚠️ Pro models busy ({resp.status_code}). Retrying with standard SDXL...")
-            payload["models"] = ["SDXL 1.0"] 
+        # 4. ROBUST ERROR HANDLING
+        if resp.status_code == 403:
+            # 403 = "Forbidden" (Workers rejected anonymous key for these models)
+            # Switch to the "Old Reliable" SDXL 1.0 which almost never blocks
+            print(f"   ⚠️ Pro models restricted (403). Switching to Universal SDXL...")
+            payload["models"] = ["SDXL 1.0"]
+            payload["params"]["steps"] = 20 # Lower steps further to ensure acceptance
             resp = requests.post(url, json=payload, headers=headers)
-            
-            if resp.status_code != 202:
-                raise Exception(f"Horde Error: {resp.text}")
+
+        if resp.status_code != 202: 
+            raise Exception(f"Horde Error {resp.status_code}: {resp.text}")
                 
         return resp.json()['id']
 
     def _generate_all_images(self, segments, temp_dir):
-        """
-        Orchestrates the image generation strategy.
-        """
         num_images = len(segments)
         results = {i: None for i in range(num_images)}
         horde_jobs = {} 
         
-        # Dynamic Timeout: 60s per image (quality takes time), max 20 mins.
+        # Dynamic Timeout: 60s per image, max 20 mins.
         MAX_WAIT = min(1200, max(200, num_images * 60))
         
-        print(f"🚀 Phase 1: Submitting {num_images} High-Fidelity jobs... (Max Wait: {MAX_WAIT}s)")
+        print(f"🚀 Phase 1: Submitting {num_images} jobs... (Max Wait: {MAX_WAIT}s)")
 
-        # A. Submit to Horde
+        # A. Submit
         for i, seg in enumerate(segments):
             try:
-                # Sanitize prompt to avoid confusing the photorealistic models
+                # Force "Photo" mode in prompt
                 clean_prompt = seg['visual_prompt'].replace("illustration", "photo").replace("vector", "photo")
                 job_id = self._submit_to_horde(clean_prompt)
                 horde_jobs[i] = job_id
@@ -169,7 +172,7 @@ class TrulyAIReelGenerator:
                 print(f"   ⚠️ [Seg {i}] Submit Error: {e}")
                 horde_jobs[i] = None
 
-        # B. Smart Wait Loop
+        # B. Wait Loop
         start_time = time.time()
         completed = 0
         
@@ -193,14 +196,12 @@ class TrulyAIReelGenerator:
                     print(f"   ❌ [Seg {i}] Horde Job Failed. Queuing for fallback.")
                     horde_jobs[i] = None 
             
-            # Sleep longer to avoid rate limits
             time.sleep(8) 
 
-        # C. Pollinations Fallback (The "Rescue" Phase)
+        # C. Pollinations Fallback
         missing = [i for i, path in results.items() if path is None]
         if missing:
             print(f"💨 Phase 3: {len(missing)} images missing. Rush ordering via Pollinations...")
-            
             with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
                 future_to_idx = {
                     executor.submit(self._generate_pollinations, segments[i]['visual_prompt']): i 
@@ -232,10 +233,10 @@ class TrulyAIReelGenerator:
         except: return 'FAILED', None
 
     def _generate_pollinations(self, prompt):
-        # Fallback uses Flux model via Pollinations
+        # Using 'flux-realism' model on Pollinations for better consistency
         encoded = quote(prompt + " vertical cinematic 8k")
         seed = random.randint(1, 999999)
-        url = f"https://image.pollinations.ai/prompt/{encoded}?width=720&height=1280&nologo=true&seed={seed}&model=flux"
+        url = f"https://image.pollinations.ai/prompt/{encoded}?width=720&height=1280&nologo=true&seed={seed}&model=flux-realism"
         resp = requests.get(url, timeout=30)
         if resp.status_code == 200: return base64.b64encode(resp.content).decode()
         raise Exception("Pollinations Error")
@@ -256,7 +257,7 @@ class TrulyAIReelGenerator:
         # 2. Batch Generate Images
         image_paths = self._generate_all_images(data['segments'], temp_dir)
         
-        # 3. Build Clips (Audio + Image + Burn Text)
+        # 3. Build Clips
         clips = []
         for i, seg in enumerate(data['segments']):
             if not image_paths.get(i): 
@@ -271,7 +272,6 @@ class TrulyAIReelGenerator:
             
             # Voice Generation
             try:
-                # Using a neutral, clear storytelling voice
                 asyncio.run(edge_tts.Communicate(seg['voiceover'], "en-US-GuyNeural").save(voice_path))
                 has_voice = True
             except: has_voice = False
@@ -288,7 +288,6 @@ class TrulyAIReelGenerator:
         
         # Music Selection
         mood = data.get('mood', 'upbeat')
-        # Use fallback if mood not found in library
         music_url = random.choice(MUSIC_LIBRARY.get(mood, list(MUSIC_LIBRARY.values())[0]))
         music_path = self._download_file(music_url, f"{temp_dir}/music.mp3")
         
@@ -308,73 +307,56 @@ class TrulyAIReelGenerator:
             'temp_dir': temp_dir
         }
 
-    # --- Video Helpers ---
+    # --- Helpers ---
     def _burn_text_into_image(self, img_path, text):
         if not text: return
         try:
             img = Image.open(img_path)
             draw = ImageDraw.Draw(img)
-            # Dynamic Font Size
             W, H = img.size
-            font_size = int(W * 0.08) # Text is 8% of screen width
+            font_size = int(W * 0.08) 
             try: font = ImageFont.truetype("arial.ttf", font_size)
             except: font = ImageFont.load_default()
             
-            # Text Wrapping
             lines = []
             words = text.upper().split()
             current = []
             for w in words:
                 current.append(w)
-                if len(' '.join(current)) > 15: # Break every 15 chars
+                if len(' '.join(current)) > 15: 
                     lines.append(' '.join(current[:-1]))
                     current = [w]
             lines.append(' '.join(current))
             
-            # Draw (Bottom Center)
-            y = H - (len(lines) * font_size * 1.3) - (H * 0.15) # 15% from bottom
+            y = H - (len(lines) * font_size * 1.3) - (H * 0.15) 
             for line in lines:
                 bbox = draw.textbbox((0, 0), line, font=font)
                 w_line = bbox[2] - bbox[0]
                 x = (W - w_line) / 2
-                
-                # Thick Black Stroke
                 for off in [-2, 0, 2]:
                     draw.text((x+off, y-2), line, font=font, fill="black")
                     draw.text((x+off, y+2), line, font=font, fill="black")
-                    
                 draw.text((x, y), line, font=font, fill="white")
                 y += font_size * 1.2
             img.save(img_path)
         except: pass
 
     def _render_clip_ffmpeg(self, img, audio, dur, out):
-        # Standard Vertical Video 1080x1920
-        # Zoompan effect: Slow zoom in (1.0 -> 1.5)
         vf = "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:-1:-1,zoompan=z='min(zoom+0.0015,1.5)':d=700:s=1080x1920:fps=30"
-        
         cmd = ['ffmpeg', '-y', '-loop', '1', '-i', img]
         if audio: cmd.extend(['-i', audio])
         cmd.extend(['-vf', vf, '-c:v', 'libx264', '-t', str(dur), '-pix_fmt', 'yuv420p', '-preset', 'ultrafast'])
         if audio: cmd.append('-shortest')
         cmd.append(out)
-        
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
 
     def _stitch_videos(self, clips, music, out, temp_dir):
         list_path = f"{temp_dir}/list.txt"
         with open(list_path, 'w') as f:
             for c in clips: f.write(f"file '{c}'\n")
-            
         vid = f"{temp_dir}/vid.mp4"
         subprocess.run(['ffmpeg', '-y', '-f', 'concat', '-safe', '0', '-i', list_path, '-c', 'copy', vid], check=True, stdout=subprocess.DEVNULL)
-        
-        # Audio Mixing: Music volume 0.15, Voice volume 1.0
-        cmd = [
-            'ffmpeg', '-y', '-i', vid, '-i', music, 
-            '-filter_complex', '[1:a]volume=0.15[bg];[0:a][bg]amix=inputs=2:duration=first', 
-            '-c:v', 'copy', out
-        ]
+        cmd = ['ffmpeg', '-y', '-i', vid, '-i', music, '-filter_complex', '[1:a]volume=0.15[bg];[0:a][bg]amix=inputs=2:duration=first', '-c:v', 'copy', out]
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
 
     def _get_audio_duration(self, path):
@@ -385,7 +367,6 @@ class TrulyAIReelGenerator:
         try:
             with open(path, 'wb') as f: f.write(requests.get(url, timeout=10).content)
         except:
-            # Fallback: create silent audio
             subprocess.run(['ffmpeg', '-y', '-f', 'lavfi', '-i', 'anullsrc', '-t', '10', path], stdout=subprocess.DEVNULL)
         return path
 
