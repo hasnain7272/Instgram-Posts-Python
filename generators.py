@@ -76,6 +76,7 @@ class TrulyAIReelGenerator:
                 temperature=0.7,
             )
             json_str = chat_completion.choices[0].message.content.strip()
+            print(json_str)
             return self._parse_json(json_str)
             
         except Exception as e:
