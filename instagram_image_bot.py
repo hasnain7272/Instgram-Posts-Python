@@ -106,7 +106,7 @@ class ImageGenerator:
             print(f"   🎨 Generating with Pollinations...")
             encoded = quote(prompt[:500])
             url = f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1080&nologo=true&model=flux"
-            response = requests.get(url, timeout=45)
+            response = requests.get(url, timeout=145)
             if response.status_code == 200:
                 return base64.b64encode(response.content).decode('utf-8')
         except: pass
