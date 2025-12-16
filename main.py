@@ -53,7 +53,7 @@ class InstagramPublisher:
         
         # 2. Wait
         print("⏳ Processing IG Video...")
-        for _ in range(12): # Wait up to 60s
+        for _ in range(36): # Wait up to 180s
             time.sleep(5)
             s = requests.get(f"https://graph.facebook.com/v20.0/{cont_id}", params={'fields': 'status_code', 'access_token': token}).json()
             if s.get('status_code') == 'FINISHED': break
