@@ -63,27 +63,22 @@ class TextEngine:
     def __init__(self):
         if KEYS["GOOGLE_API_KEY"]:
             genai.configure(api_key=KEYS["GOOGLE_API_KEY"])
-            # Fallback list of models to try in order
-            self.models = ['gemini-1.5-flash', 'gemini-pro', 'gemini-1.5-pro-latest']
+            self.models = ['gemini-1.5-flash', 'gemini-pro']
         
         if KEYS["HUGGINGFACE_TOKEN"]:
             self.hf_client = InferenceClient(token=KEYS["HUGGINGFACE_TOKEN"])
 
     def generate(self, prompt: str) -> str:
-        # 1. Try Gemini Models
+        # 1. Try Gemini
         if KEYS["GOOGLE_API_KEY"]:
             for model_name in self.models:
                 try:
                     model = genai.GenerativeModel(model_name)
                     response = model.generate_content(prompt)
                     return response.text.strip()
-                except Exception as e:
-                    # Only print if it's not a 404 (model not found), to keep logs clean
-                    if "404" not in str(e):
-                        print(f"   ⚠️ Gemini ({model_name}) Failed: {str(e)[:50]}")
-                    continue
+                except: continue
 
-        # 2. Try Hugging Face (Fallback)
+        # 2. Try HF
         if KEYS["HUGGINGFACE_TOKEN"]:
             try:
                 print("   🔄 Switching to HF Text...")
@@ -106,40 +101,28 @@ class ImageGenerator:
             self.hf_client = InferenceClient(token=KEYS["HUGGINGFACE_TOKEN"])
 
     def generate_image(self, prompt: str) -> str:
-        # PRIORITY 1: Pollinations (As requested)
+        # 1. Pollinations
         try:
-            for i in range(3):
-                print(f"Generating with Pollinations... Attempt {i + 1}")
-                
-                encoded = quote(prompt[:500])  # Truncate to prevent URL errors
-                url = (
-                    f"https://image.pollinations.ai/prompt/{encoded}"
-                    f"?width=1080&height=1080&nologo=true&model=flux"
-                )
-    
-                response = requests.get(url, timeout=45)
-    
-                if response.status_code == 200 and response.content:
-                    return base64.b64encode(response.content).decode("utf-8")
-    
-                print(f"Pollinations attempt {i + 1} failed (status {response.status_code})")
+            print(f"   🎨 Generating with Pollinations...")
+            encoded = quote(prompt[:500])
+            url = f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1080&nologo=true&model=flux"
+            response = requests.get(url, timeout=45)
+            if response.status_code == 200:
+                return base64.b64encode(response.content).decode('utf-8')
+        except: pass
 
-        except Exception as e:
-            print(f"   ⚠️ Pollinations Failed: {e}")
-
-        # PRIORITY 2: Hugging Face Flux
+        # 2. Flux HF
         try:
             print(f"   🎨 Generating with Flux (HF)...")
             image = self.hf_client.text_to_image(
-                prompt + ", highly detailed, 4k, instagram aesthetic",
+                prompt + ", highly detailed, 4k",
                 model="black-forest-labs/FLUX.1-schnell"
             )
             import io
             buffered = io.BytesIO()
             image.save(buffered, format="JPEG")
             return base64.b64encode(buffered.getvalue()).decode('utf-8')
-        except Exception as e:
-            print(f"   ⚠️ Flux Failed: {e}")
+        except: pass
             
         raise Exception("All image generation methods failed")
 
@@ -150,28 +133,23 @@ class InstagramPostGenerator:
         self.image_generator = ImageGenerator()
         self.search_templates = [
             "viral Instagram posts {niche} aesthetic 2025",
-            "trending {niche} photography instagram",
-            "best {niche} content ideas instagram"
+            "trending {niche} photography instagram"
         ]
 
     def fetch_inspiration(self, niche: str) -> List[InspirationPost]:
-        season = self._get_season()
-        query = random.choice(self.search_templates).format(niche=niche, season=season)
-        
+        query = random.choice(self.search_templates).format(niche=niche)
         prompt = f"""
-        Act as a social media researcher. Based on the query "{query}", invent 3 viral Instagram post concepts for the niche "{niche}".
-        
+        Act as a social media researcher. Based on query "{query}", invent 1 viral Instagram post concept for niche "{niche}".
         Return STRICT JSON array:
         [
             {{
                 "id": "1",
                 "username": "@viral_{niche}",
                 "caption": "Example caption...",
-                "imageDescription": "Detailed visual description of a photo (not video) related to {niche}..."
+                "imageDescription": "Detailed visual description of a photo..."
             }}
         ]
         """
-        
         json_str = self.text_engine.generate(prompt)
         parsed = self._clean_json(json_str)
         return [InspirationPost(**p) for p in parsed]
@@ -180,42 +158,22 @@ class InstagramPostGenerator:
         b64_img = self.image_generator.generate_image(inspiration.imageDescription)
         
         prompt = f"""
-        Write an engaging Instagram caption for the {niche} niche.
-        Context: {inspiration.imageDescription}
-        
-        Return JSON:
-        {{
-            "caption": "Catchy caption with emojis",
-            "hashtags": ["#tag1", "#tag2", "#tag3", "#tag4", "#tag5"]
-        }}
+        Write engaging Instagram caption for {niche}. Context: {inspiration.imageDescription}
+        Return JSON: {{"caption": "Catchy text", "hashtags": ["#tag1", "#tag2"]}}
         """
-        
         json_str = self.text_engine.generate(prompt)
         data = self._clean_json(json_str)
-        
-        return GeneratedPost(
-            base64Image=b64_img,
-            caption=data.get('caption', f"Love this {niche} vibes! ✨"),
-            hashtags=data.get('hashtags', [f"#{niche}"])
-        )
+        return GeneratedPost(base64Image=b64_img, caption=data.get('caption', 'Cool!'), hashtags=data.get('hashtags', []))
 
     def _clean_json(self, text):
-        if '```' in text:
-            text = text.split('```json')[1].split('```')[0] if '```json' in text else text.split('```')[1]
+        if '```' in text: text = text.split('```json')[1].split('```')[0] if '```json' in text else text.split('```')[1]
         try: return json.loads(text)
         except: return []
-
-    def _get_season(self):
-        m = datetime.now().month
-        if m in [12, 1, 2]: return "winter"
-        if m in [3, 4, 5]: return "spring"
-        if m in [6, 7, 8]: return "summer"
-        return "autumn"
         
     def _extract_keywords(self, caption):
         return [w for w in caption.lower().split() if len(w) > 4][:10]
 
-# --- MANAGERS ---
+# --- HISTORY & UPLOAD ---
 class PostHistoryManager:
     def __init__(self):
         self.cloud_name = KEYS['CLOUDINARY_CLOUD_NAME']
@@ -234,13 +192,12 @@ class PostHistoryManager:
             sig = self._sign({'api_key': self.api_key, 'timestamp': ts})
             url = f"[https://res.cloudinary.com/](https://res.cloudinary.com/){self.cloud_name}/raw/upload/v1/{self.file_name}?api_key={self.api_key}&timestamp={ts}&signature={sig}"
             resp = requests.get(url)
-            if resp.status_code == 200:
-                return [PostMetadata(**p) for p in resp.json().get('posts', [])]
+            if resp.status_code == 200: return [PostMetadata(**p) for p in resp.json().get('posts', [])]
         except: pass
         return []
 
-    def upload(self, history: List[PostMetadata]):
-        data = json.dumps({'posts': [asdict(p) for p in history], 'updated': str(datetime.now())})
+    def upload(self, history):
+        data = json.dumps({'posts': [asdict(p) for p in history]})
         ts = int(time.time())
         params = {'api_key': self.api_key, 'public_id': self.file_name, 'timestamp': ts, 'upload_preset': self.preset}
         params['signature'] = self._sign(params)
@@ -250,39 +207,60 @@ class PostHistoryManager:
     def get_next_niche(self, history):
         niches = ['fitness', 'motivation', 'food', 'travel', 'tech', 'wellness']
         recent = [p.engagement_niche for p in history[-5:]]
-        for n in niches:
+        for n in niches: 
             if n not in recent: return n
         return random.choice(niches)
 
 class CloudinaryUploader:
     @staticmethod
     def upload(b64_img):
-        ts = int(time.time())
-        
-        # --- FIX: STRICT URL CLEANING ---
-        raw_cloud_name = KEYS['CLOUDINARY_CLOUD_NAME'] or ""
-        # Remove anything that isn't a letter or number to prevent bad URLs
-        clean_cloud_name = re.sub(r'[^a-zA-Z0-9-_]', '', raw_cloud_name)
-        
-        if not clean_cloud_name: raise Exception("Cloudinary Name Invalid")
+        # 1. Gather Credentials (Aggressively Cleaned)
+        api_key = KEYS['CLOUDINARY_API_KEY']
+        api_secret = KEYS['CLOUDINARY_API_SECRET'].strip().replace("'", "").replace('"', "")
+        upload_preset = KEYS['CLOUDINARY_UPLOAD_PRESET']
+        timestamp = int(time.time())
 
-        params = {
-            'api_key': KEYS['CLOUDINARY_API_KEY'],
-            'timestamp': ts,
-            'upload_preset': KEYS['CLOUDINARY_UPLOAD_PRESET']
+        # 2. Build Params Map (ONLY what needs signing)
+        # Rules: Alphabetical order, exclude 'file', 'api_key', 'resource_type', 'cloud_name'
+        params_to_sign = {
+            'timestamp': timestamp,
+            'upload_preset': upload_preset
         }
-        s = '&'.join(f"{k}={v}" for k, v in sorted(params.items())) + KEYS['CLOUDINARY_API_SECRET']
-        params['signature'] = hashlib.sha1(s.encode()).hexdigest()
         
-        # Explicit string cast to prevent Requests object errors
-        url = str(f"https://api.cloudinary.com/v1_1/{clean_cloud_name}/image/upload")
+        # 3. Create Signature String
+        # Join as key=value&key=value
+        string_to_sign = '&'.join(f"{k}={v}" for k, v in sorted(params_to_sign.items()))
         
-        print(f"☁️ Uploading to Cloudinary: {url}")
+        # Append Secret (No & separator)
+        string_to_sign_with_secret = string_to_sign + api_secret
+        
+        # Debug: Check this string if it fails (it should look like timestamp=123&upload_preset=xyzSECRET)
+        print(f"DEBUG: Signing string (last 5 chars of secret): ...{api_secret[-5:]}")
+        
+        signature = hashlib.sha1(string_to_sign_with_secret.encode('utf-8')).hexdigest()
+
+        # 4. Final POST Payload (Includes api_key and signature)
+        payload = {
+            'api_key': api_key,
+            'timestamp': timestamp,
+            'upload_preset': upload_preset,
+            'signature': signature
+        }
         
         files = {'file': f"data:image/jpeg;base64,{b64_img}"}
-        resp = requests.post(url, files=files, data=params)
         
-        if resp.status_code != 200: raise Exception(f"Cloudinary: {resp.text}")
+        # 5. Clean URL
+        cloud_name = re.sub(r'[^a-zA-Z0-9-_]', '', KEYS['CLOUDINARY_CLOUD_NAME'])
+        url = f"https://api.cloudinary.com/v1_1/{cloud_name}/image/upload"
+        
+        print(f"☁️ Uploading to: {url}")
+        
+        resp = requests.post(url, files=files, data=payload)
+        
+        if resp.status_code != 200:
+            print(f"❌ Cloudinary Error: {resp.text}")
+            raise Exception(f"Cloudinary Error: {resp.text}")
+            
         return resp.json()['secure_url']
 
 class InstagramPublisher:
