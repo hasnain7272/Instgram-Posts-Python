@@ -35,7 +35,7 @@ class TrulyAIReelGenerator:
 
         # 2. Horde Configuration (The Image Engine)
         self.horde_api_key = self.keys.get("HORDE_API_KEY", "0000000000")
-        self.client_agent = "TrulyAI_Bot:v6.0:production-longform"
+        self.client_agent = "TrulyAI_Bot:v7.0:production-quality"
 
     # =========================================================================
     # 1. HIGH-RETENTION SCRIPT GENERATION (Groq / Llama 3)
@@ -92,29 +92,77 @@ class TrulyAIReelGenerator:
             raise Exception(f"❌ Script Generation Failed: {e}")
 
     # =========================================================================
-    # 2. DYNAMIC BATCH IMAGE ENGINE (Horde -> Dynamic Wait -> Pollinations)
+    # 2. HIGH-FIDELITY IMAGE ENGINE (Horde -> Dynamic Wait -> Pollinations)
     # =========================================================================
+    def _submit_to_horde(self, prompt):
+        url = "https://stablehorde.net/api/v2/generate/async"
+        headers = {"apikey": self.horde_api_key, "Client-Agent": self.client_agent}
+        
+        # 1. THE MAGIC SAUCE: Better Keywords for Photorealism
+        quality_boost = " ### masterpiece, cinematic lighting, 8k, hyperrealistic, highly detailed, sharp focus, 35mm photography"
+        full_prompt = prompt + quality_boost
+
+        # 2. THE NEGATIVE PROMPT (Removes "AI Look")
+        negative_prompt = "cartoon, anime, painting, illustration, ugly, deformed, blurry, low quality, pixelated, distorted faces, bad anatomy, watermark, text, signature"
+
+        # 3. TOP-TIER MODEL LIST (Prioritized)
+        high_quality_models = [
+            "Juggernaut XL",        # #1 for cinematic realism
+            "RealVisXL V4.0",       # #2 for photo-realism
+            "DreamShaper XL",       # Great artistic realism
+            "AlbedoBase XL (SDXL)", # Solid all-rounder
+            "Realistic Vision V6.0 B1" 
+        ]
+
+        payload = {
+            "prompt": full_prompt + " ### " + negative_prompt,
+            "params": {
+                "sampler_name": "k_dpmpp_2m", # Sharper details
+                "toggles": [1, 4],            # Downloadable
+                "cfg_scale": 6,               # Lower scale = more realistic
+                "steps": 30,                  # Cleaner image
+                "width": 576,                 # 9:16 safe width
+                "height": 1024
+            },
+            "nsfw": False,
+            "censor_nsfw": True,
+            "models": high_quality_models,
+            "r2": True,
+            "shared": True
+        }
+        
+        resp = requests.post(url, json=payload, headers=headers)
+        
+        if resp.status_code != 202: 
+            # Fallback if specific models are overloaded
+            print(f"   ⚠️ Pro models busy ({resp.status_code}). Retrying with standard SDXL...")
+            payload["models"] = ["SDXL 1.0"] 
+            resp = requests.post(url, json=payload, headers=headers)
+            
+            if resp.status_code != 202:
+                raise Exception(f"Horde Error: {resp.text}")
+                
+        return resp.json()['id']
+
     def _generate_all_images(self, segments, temp_dir):
         """
         Orchestrates the image generation strategy.
-        Returns a dict: {index: "path/to/image.jpg"}
         """
         num_images = len(segments)
         results = {i: None for i in range(num_images)}
         horde_jobs = {} 
         
-        # Dynamic Timeout: 45s per image, but minimum 3 minutes, max 15 minutes.
-        # This handles the "Long Reel" problem.
-        MAX_WAIT = min(900, max(180, num_images * 45))
+        # Dynamic Timeout: 60s per image (quality takes time), max 20 mins.
+        MAX_WAIT = min(1200, max(200, num_images * 60))
         
-        print(f"🚀 Phase 1: Submitting {num_images} jobs to AI Horde. (Max Wait: {MAX_WAIT}s)")
+        print(f"🚀 Phase 1: Submitting {num_images} High-Fidelity jobs... (Max Wait: {MAX_WAIT}s)")
 
         # A. Submit to Horde
         for i, seg in enumerate(segments):
             try:
-                # Append style modifiers to ensure quality
-                prompt_enhanced = seg['visual_prompt'] + " ### vertical, 9:16 aspect ratio, cinematic, 8k, highly detailed"
-                job_id = self._submit_to_horde(prompt_enhanced)
+                # Sanitize prompt to avoid confusing the photorealistic models
+                clean_prompt = seg['visual_prompt'].replace("illustration", "photo").replace("vector", "photo")
+                job_id = self._submit_to_horde(clean_prompt)
                 horde_jobs[i] = job_id
                 print(f"   🔹 [Seg {i}] Submitted (ID: {job_id})")
             except Exception as e:
@@ -126,7 +174,6 @@ class TrulyAIReelGenerator:
         completed = 0
         
         while time.time() - start_time < MAX_WAIT:
-            # Check only pending jobs
             pending = [i for i in range(num_images) if results[i] is None and horde_jobs[i] is not None]
             
             if not pending:
@@ -144,17 +191,16 @@ class TrulyAIReelGenerator:
                     results[i] = path
                 elif status == 'FAILED':
                     print(f"   ❌ [Seg {i}] Horde Job Failed. Queuing for fallback.")
-                    horde_jobs[i] = None # Stop checking
+                    horde_jobs[i] = None 
             
-            # Sleep Logic: If we are waiting for many images, sleep longer to avoid spamming API
-            time.sleep(10 if len(pending) > 5 else 5)
+            # Sleep longer to avoid rate limits
+            time.sleep(8) 
 
         # C. Pollinations Fallback (The "Rescue" Phase)
         missing = [i for i, path in results.items() if path is None]
         if missing:
             print(f"💨 Phase 3: {len(missing)} images missing. Rush ordering via Pollinations...")
             
-            # Use extra threads for the rush order
             with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
                 future_to_idx = {
                     executor.submit(self._generate_pollinations, segments[i]['visual_prompt']): i 
@@ -174,19 +220,6 @@ class TrulyAIReelGenerator:
         return results
 
     # --- Internal API Helpers ---
-    def _submit_to_horde(self, prompt):
-        url = "https://stablehorde.net/api/v2/generate/async"
-        headers = {"apikey": self.horde_api_key, "Client-Agent": self.client_agent}
-        payload = {
-            "prompt": prompt,
-            "params": {"steps": 25, "width": 576, "height": 1024, "toggles": [1, 4]},
-            "models": ["AlbedoBase XL (SDXL)", "SDXL 1.0", "Deliberate"], # Mix of models
-            "nsfw": False, "censor_nsfw": True
-        }
-        resp = requests.post(url, json=payload, headers=headers)
-        if resp.status_code != 202: raise Exception(f"Status {resp.status_code}")
-        return resp.json()['id']
-
     def _check_horde_status(self, job_id):
         try:
             stat = requests.get(f"https://stablehorde.net/api/v2/generate/check/{job_id}").json()
@@ -255,7 +288,7 @@ class TrulyAIReelGenerator:
         
         # Music Selection
         mood = data.get('mood', 'upbeat')
-        # Use fallback if mood not found
+        # Use fallback if mood not found in library
         music_url = random.choice(MUSIC_LIBRARY.get(mood, list(MUSIC_LIBRARY.values())[0]))
         music_path = self._download_file(music_url, f"{temp_dir}/music.mp3")
         
@@ -360,9 +393,3 @@ class TrulyAIReelGenerator:
         if '```' in text: text = text.split('```json')[1].split('```')[0] if '```json' in text else text.split('```')[1]
         try: return json.loads(text)
         except: return {"segments": [], "title": "Error"}
-
-# Example Usage
-if __name__ == "__main__":
-    keys = {"GROQ_API_KEY": "YOUR_KEY_HERE"}
-    # gen = TrulyAIReelGenerator(keys)
-    # res = gen.generate_reel("History of Coffee", 15) # Long Form Test
