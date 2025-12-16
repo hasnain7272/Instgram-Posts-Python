@@ -112,17 +112,17 @@ class ImageGenerator:
         except: pass
 
         # 2. Flux HF
-        try:
-            print(f"   🎨 Generating with Flux (HF)...")
-            image = self.hf_client.text_to_image(
-                prompt + ", highly detailed, 4k",
-                model="black-forest-labs/FLUX.1-schnell"
-            )
-            import io
-            buffered = io.BytesIO()
-            image.save(buffered, format="JPEG")
-            return base64.b64encode(buffered.getvalue()).decode('utf-8')
-        except: pass
+        # try:
+        #     print(f"   🎨 Generating with Flux (HF)...")
+        #     image = self.hf_client.text_to_image(
+        #         prompt + ", highly detailed, 4k",
+        #         model="black-forest-labs/FLUX.1-schnell"
+        #     )
+        #     import io
+        #     buffered = io.BytesIO()
+        #     image.save(buffered, format="JPEG")
+        #     return base64.b64encode(buffered.getvalue()).decode('utf-8')
+        # except: pass
             
         raise Exception("All image generation methods failed")
 
@@ -190,7 +190,7 @@ class PostHistoryManager:
         try:
             ts = int(time.time())
             sig = self._sign({'api_key': self.api_key, 'timestamp': ts})
-            url = f"[https://res.cloudinary.com/](https://res.cloudinary.com/){self.cloud_name}/raw/upload/v1/{self.file_name}?api_key={self.api_key}&timestamp={ts}&signature={sig}"
+            url = f"https://res.cloudinary.com/{self.cloud_name}/raw/upload/v1/{self.file_name}?api_key={self.api_key}&timestamp={ts}&signature={sig}"
             resp = requests.get(url)
             if resp.status_code == 200: return [PostMetadata(**p) for p in resp.json().get('posts', [])]
         except: pass
@@ -202,7 +202,7 @@ class PostHistoryManager:
         params = {'api_key': self.api_key, 'public_id': self.file_name, 'timestamp': ts, 'upload_preset': self.preset}
         params['signature'] = self._sign(params)
         files = {'file': ('history.json', data, 'application/json')}
-        requests.post(f"[https://api.cloudinary.com/v1_1/](https://api.cloudinary.com/v1_1/){self.cloud_name}/raw/upload", files=files, data=params)
+        requests.post(f"https://api.cloudinary.com/v1_1/{self.cloud_name}/raw/upload", files=files, data=params)
 
     def get_next_niche(self, history):
         niches = ['fitness', 'motivation', 'food', 'travel', 'tech', 'wellness']
