@@ -268,7 +268,7 @@ class InstagramPublisher:
     def publish(img_url, caption):
         acc_id = KEYS['INSTAGRAM_ACCOUNT_ID']
         token = KEYS['INSTAGRAM_ACCESS_TOKEN']
-        base = f"[https://graph.facebook.com/v20.0/](https://graph.facebook.com/v20.0/){acc_id}"
+        base = f"https://graph.facebook.com/v20.0/{acc_id}"
         
         resp = requests.post(f"{base}/media", data={'image_url': img_url, 'caption': caption, 'access_token': token})
         if resp.status_code != 200: raise Exception(f"IG Container: {resp.text}")
@@ -276,7 +276,7 @@ class InstagramPublisher:
         
         for _ in range(10):
             time.sleep(3)
-            s = requests.get(f"[https://graph.facebook.com/v20.0/](https://graph.facebook.com/v20.0/){cont_id}", params={'fields': 'status_code', 'access_token': token}).json()
+            s = requests.get(f"https://graph.facebook.com/v20.0/{cont_id}", params={'fields': 'status_code', 'access_token': token}).json()
             if s.get('status_code') == 'FINISHED': break
             
         resp = requests.post(f"{base}/media_publish", data={'creation_id': cont_id, 'access_token': token})
