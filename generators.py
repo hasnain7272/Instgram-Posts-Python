@@ -128,7 +128,7 @@ class TrulyAIReelGenerator:
                 "height": 1024
             },
             "nsfw": False,
-            "censor_nsfw": True,
+            "censor_nsfw": False,
             "models": primary_models,
             "r2": True,
             "shared": True
