@@ -221,7 +221,7 @@ class TrulyAIReelGenerator:
     def _gen_pollinations(self, prompt):
         encoded = quote(prompt + " vertical cinematic 8k")
         url = f"https://image.pollinations.ai/prompt/{encoded}?width=720&height=1280&nologo=true&seed={random.randint(1,999)}&model=flux"
-        return base64.b64encode(requests.get(url, timeout=200).content).decode()
+        return base64.b64encode(requests.get(url, timeout=40).content).decode()
 
     def _gen_hf_flux(self, prompt):
         try:
