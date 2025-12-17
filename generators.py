@@ -67,7 +67,11 @@ class TrulyAIReelGenerator:
             "title": "Clickbait Title",
             "caption": "Engaging caption",
             "hashtags": ["#tag1", "#tag2"](atleast 20+),
-            "mood": "energetic"
+            "mood": "upbeat" // Choose from: "energetic", "calm", "upbeat", "intense", "chill",
+            "title": "Quality title for youtube to shorts/video (have clear and easy catchy via search)",
+            "description": "Youtube Video description",
+            "tags": "Youtube Tags",
+            "category_id" : "Youtube category id (as per niche content e.g 22)"
         }}
         
         REQUIREMENTS:
@@ -154,17 +158,30 @@ class TrulyAIReelGenerator:
                     except: pass
 
         # --- PHASE 3: HUGGING FACE (Last Resort) ---
-        missing = [i for i, path in results.items() if path is None]
-        if missing and self.keys.get("HUGGINGFACE_API_TOKEN"):
-            print(f"🛡️ Phase 3: Hugging Face ({len(missing)} critical)...")
-            for i in missing:
-                try:
-                    img_b64 = self._gen_hf_flux(segments[i]['visual_prompt'])
-                    self._save_b64(img_b64, i, temp_dir, results)
-                    print(f"   🏰 [Seg {i}] Saved by HF Flux")
-                except Exception as e:
-                    print(f"   ❌ [Seg {i}] Failed on all 3 layers: {e}")
+        # missing = [i for i, path in results.items() if path is None]
+        # if missing and self.keys.get("HUGGINGFACE_API_TOKEN"):
+        #     print(f"🛡️ Phase 3: Hugging Face ({len(missing)} critical)...")
+        #     for i in missing:
+        #         try:
+        #             img_b64 = self._gen_hf_flux(segments[i]['visual_prompt'])
+        #             self._save_b64(img_b64, i, temp_dir, results)
+        #             print(f"   🏰 [Seg {i}] Saved by HF Flux")
+        #         except Exception as e:
+        #             print(f"   ❌ [Seg {i}] Failed on all 3 layers: {e}")
 
+        # Temp start -- again pollination
+        missing = [i for i, path in results.items() if path is None]
+        if missing:
+            print(f"💨 Phase 2: Pollinations ({len(missing)} missing)...")
+            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                future_map = {executor.submit(self._gen_pollinations, segments[i]['visual_prompt']): i for i in missing}
+                for future in concurrent.futures.as_completed(future_map):
+                    idx = future_map[future]
+                    try:
+                        self._save_b64(future.result(), idx, temp_dir, results)
+                        print(f"   🐇 [Seg {idx}] Saved by Pollinations")
+                    except: pass
+        # Temp Ends
         return results
 
     # --- Image Worker Methods ---
@@ -204,7 +221,7 @@ class TrulyAIReelGenerator:
     def _gen_pollinations(self, prompt):
         encoded = quote(prompt + " vertical cinematic 8k")
         url = f"https://image.pollinations.ai/prompt/{encoded}?width=720&height=1280&nologo=true&seed={random.randint(1,999)}&model=flux"
-        return base64.b64encode(requests.get(url, timeout=20).content).decode()
+        return base64.b64encode(requests.get(url, timeout=200).content).decode()
 
     def _gen_hf_flux(self, prompt):
         try:
@@ -283,7 +300,10 @@ class TrulyAIReelGenerator:
                 'caption': data.get('caption', ''),
                 'hashtags': data.get('hashtags', []),
                 'title': data.get('title', ''),
-                'temp_dir': temp_dir
+                'temp_dir': temp_dir,
+                'description': data.get('description', ''),
+                'tags': data.get('tags', ''),
+                'category_id' : data.get('category_id', '')
             }
 
     # --- Helpers ---
