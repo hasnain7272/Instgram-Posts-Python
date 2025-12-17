@@ -47,7 +47,7 @@ jobs:
           # Upgrade requests first to prevent "No connection adapter" errors
           pip install --upgrade requests urllib3
           pip install google-generativeai google-api-python-client google-auth-httplib2 google-auth-oauthlib
-          pip install edge-tts huggingface_hub pillow aiofiles
+          pip install edge-tts huggingface_hub pillow aiofiles groq
 
       # 3. Select Niche (Random for Schedule vs Manual for Dispatch)
       - name: Set Niche
@@ -77,6 +77,8 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           HUGGINGFACE_API_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN_1 }}
           REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+          GROQ_API_KEY: ${{secrets.GROQ_API_KEY }}
+          HORDE_API_KEY: ${{secrets.HORDE_API_KEY }}
           
           # Social Keys
           CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}

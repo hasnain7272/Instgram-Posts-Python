@@ -7,93 +7,223 @@ import asyncio
 import tempfile
 import json
 import subprocess
+import concurrent.futures
 import io
 from urllib.parse import quote
 from PIL import Image, ImageDraw, ImageFont
 
 # Libraries
-from huggingface_hub import InferenceClient
 import edge_tts
-import google.generativeai as genai
+from groq import Groq
+from huggingface_hub import InferenceClient
 from config import MUSIC_LIBRARY, VOICE_ID
 
 class TrulyAIReelGenerator:
     def __init__(self, keys: dict):
-        """Initialize with Pro Features (HF Client, EdgeTTS, PIL)"""
+        """
+        Initialize the Triple-Layer Engine.
+        keys: {
+            "GROQ_API_KEY": "gsk_...",
+            "HORDE_API_KEY": "...",     # Recommended for high quality
+            "HUGGINGFACE_API_TOKEN": "..." # Needed for Level 3 fallback
+        }
+        """
         self.keys = keys
         
-        # Initialize HF Client (Robust Image Gen)
+        # 1. Groq (Primary Scripting)
+        if self.keys.get("GROQ_API_KEY"):
+            self.groq_client = Groq(api_key=self.keys["GROQ_API_KEY"])
+            
+        # 2. Hugging Face (Backup Scripting & Last Resort Images)
         if self.keys.get("HUGGINGFACE_API_TOKEN"):
             self.hf_client = InferenceClient(token=self.keys["HUGGINGFACE_API_TOKEN"])
-        
-        if self.keys.get("GOOGLE_API_KEY"):
-            genai.configure(api_key=self.keys["GOOGLE_API_KEY"])
+        else:
+            print("⚠️ Warning: HF Token missing. Level 3 fallback disabled.")
 
-    # --- 1. AI Script Generation (Viral Optimized) ---
+        # 3. Horde (Primary Images)
+        self.horde_api_key = self.keys.get("HORDE_API_KEY", "0000000000")
+        self.client_agent = "TrulyAI_Bot:v9.0:triple-layer"
+
+    # =========================================================================
+    # 1. TRIPLE-LAYER SCRIPT GENERATION
+    # =========================================================================
     def _generate_ai_script(self, niche: str, count: int) -> dict:
-        """Generate a viral script with Hooks and 30 Hashtags"""
-        print(f"🤖 Generating Viral Script for: {niche}...")
+        print(f"🤖 Generating Script for: {niche}...")
         
-        prompt = f"""You are an Instagram algorithm expert. Write a viral Reel script for: {niche}.
+        # 1. Define Prompt (Reusable)
+        prompt = f"""
+        You are a viral content expert. Write a Reel script for: {niche}.
         
-        CRITICAL REQUIREMENTS:
-        1. Start with a "Visual Hook" (text that makes people stop scrolling).
-        2. Generate 30 high-traffic hashtags (mix of broad and niche).
-        3. Create {count} segments.
-        4. Mood must be one of: energetic, calm, upbeat, intense, chill.
-        
-        Return STRICT JSON:
+        STRICT JSON OUTPUT ONLY. No markdown.
+        Structure:
         {{
             "segments": [
                 {{
-                    "voiceover": "Spoken text (keep it under 10 words per clip)",
-                    "visual_prompt": "Detailed photorealistic image prompt, 8k, cinematic",
-                    "text_overlay": "Short punchy text (max 5 words)"
+                    "voiceover": "Spoken text (Conversational, under 15 words)",
+                    "visual_prompt": "Cinematic 8k very ultra detailed prompt, distinct camera angle",
+                    "text_overlay": "Punchy Hook (Max 5 words)"
                 }}
             ],
-            "title": "Clickbait YouTube Title (under 100 chars)",
-            "caption": "Engaging caption with questions",
-            "hashtags": ["#tag1", "#tag2", ... "#tag30"],
-            "description": "YouTube description",
-            "tags": "tag1, tag2, tag3",
-            "mood": "energetic", 
-            "category_id": "22"
+            "title": "Clickbait Title",
+            "caption": "Engaging caption",
+            "hashtags": ["#tag1", "#tag2"](atleast 20+),
+            "mood": "upbeat" // Choose from: "energetic", "calm", "upbeat", "intense", "chill",
+            "title": "Quality title for youtube to shorts/video (have clear and easy catchy via search)",
+            "description": "Youtube Video description",
+            "tags": "Youtube Tags",
+            "category_id" : "Youtube category id (as per niche content e.g 22)"
         }}
+        
+        REQUIREMENTS:
+        - Generate exactly {count} segments. 
+        - Segment 1 MUST be a Visual Hook.
+        - Generate at least 20 high-traffic hashtags.
         """
-        
-        json_str = None
-        
-        # Try Gemini First
-        if self.keys.get("GOOGLE_API_KEY"):
+
+        # 2. Attempt 1: Groq (Llama 3)
+        if self.keys.get("GROQ_API_KEY"):
             try:
-                model = genai.GenerativeModel('gemini-2.0-flash-exp')
-                response = model.generate_content(prompt)
-                json_str = response.text.strip()
-            except Exception as e:
-                print(f"⚠️ Gemini Failed: {e}")
-        
-        # Fallback to HF Text
-        if not json_str and self.keys.get("HUGGINGFACE_API_TOKEN"):
-            try:
-                messages = [{"role": "user", "content": prompt}]
-                response = self.hf_client.chat_completion(
-                    messages, model="Qwen/Qwen2.5-72B-Instruct", max_tokens=2000
+                print("   🧠 Strategy A: Using Groq (Llama 3)...")
+                chat = self.groq_client.chat.completions.create(
+                    messages=[{"role": "user", "content": prompt}],
+                    model="llama-3.3-70b-versatile",
+                    temperature=0.7,
                 )
-                json_str = response.choices[0].message.content
+                return self._parse_json(chat.choices[0].message.content)
             except Exception as e:
-                print(f"⚠️ HF Text Failed: {e}")
+                print(f"   ⚠️ Groq Failed: {e}. Switching to Strategy B...")
 
-        if not json_str:
-            raise Exception("❌ All AI Script Generators Failed")
+        # 3. Attempt 2: Hugging Face (Qwen 2.5)
+        if self.keys.get("HUGGINGFACE_API_TOKEN"):
+            try:
+                print("   🧠 Strategy B: Using HF (Qwen 2.5)...")
+                chat = self.hf_client.chat_completion(
+                    messages=[{"role": "user", "content": prompt}],
+                    model="Qwen/Qwen2.5-72B-Instruct", 
+                    max_tokens=2000
+                )
+                return self._parse_json(chat.choices[0].message.content)
+            except Exception as e:
+                print(f"   ⚠️ HF Scripting Failed: {e}")
 
-        return self._parse_json(json_str)
+        raise Exception("❌ All Script Generators Failed.")
 
-    # --- 2. Image Generation (Updated HF Client) ---
-    def _generate_image(self, prompt: str) -> str:
-        """Generate image using HF Client (Flux)"""
-        print(f"   🎨 Generating Image...")
+    # =========================================================================
+    # 2. TRIPLE-LAYER IMAGE ENGINE (Horde -> Pollinations -> HF)
+    # =========================================================================
+    def _generate_all_images(self, segments, temp_dir):
+        num_images = len(segments)
+        results = {i: None for i in range(num_images)}
         
-        # Strategy 1: Flux Schnell via InferenceClient
+        # --- PHASE 1: AI HORDE (Best Quality) ---
+        print(f"🚀 Phase 1: AI Horde (High Fidelity)...")
+        horde_jobs = {}
+        
+        # Submit All
+        for i, seg in enumerate(segments):
+            print(f"   🔹 Seg {i} Prompt: {seg['visual_prompt'][:50]}...")
+            try:
+                job_id = self._submit_to_horde(seg['visual_prompt'])
+                horde_jobs[i] = job_id
+            except Exception as e:
+                print(f"   ⚠️ [Seg {i}] Horde Submit Error: {e}")
+                horde_jobs[i] = None
+
+        # Wait Loop (Max 120s)
+        start_time = time.time()
+        while time.time() - start_time < 120:
+            pending = [i for i in range(num_images) if results[i] is None and horde_jobs[i] is not None]
+            if not pending: break
+            
+            for i in pending:
+                status, img_b64 = self._check_horde_status(horde_jobs[i])
+                if status == 'DONE':
+                    print(f"   ✅ [Seg {i}] Horde Delivered!")
+                    self._save_b64(img_b64, i, temp_dir, results)
+                elif status == 'FAILED':
+                    horde_jobs[i] = None # Mark for fallback
+            time.sleep(5)
+
+        # --- PHASE 2: POLLINATIONS (Fast Backup) ---
+        missing = [i for i, path in results.items() if path is None]
+        if missing:
+            print(f"💨 Phase 2: Pollinations ({len(missing)} missing)...")
+            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                future_map = {executor.submit(self._gen_pollinations, segments[i]['visual_prompt']): i for i in missing}
+                for future in concurrent.futures.as_completed(future_map):
+                    idx = future_map[future]
+                    try:
+                        self._save_b64(future.result(), idx, temp_dir, results)
+                        print(f"   🐇 [Seg {idx}] Saved by Pollinations")
+                    except: pass
+
+        # --- PHASE 3: HUGGING FACE (Last Resort) ---
+        # missing = [i for i, path in results.items() if path is None]
+        # if missing and self.keys.get("HUGGINGFACE_API_TOKEN"):
+        #     print(f"🛡️ Phase 3: Hugging Face ({len(missing)} critical)...")
+        #     for i in missing:
+        #         try:
+        #             img_b64 = self._gen_hf_flux(segments[i]['visual_prompt'])
+        #             self._save_b64(img_b64, i, temp_dir, results)
+        #             print(f"   🏰 [Seg {i}] Saved by HF Flux")
+        #         except Exception as e:
+        #             print(f"   ❌ [Seg {i}] Failed on all 3 layers: {e}")
+
+        # Temp start -- again pollination
+        missing = [i for i, path in results.items() if path is None]
+        if missing:
+            print(f"💨 Phase 2: Pollinations ({len(missing)} missing)...")
+            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                future_map = {executor.submit(self._gen_pollinations, segments[i]['visual_prompt']): i for i in missing}
+                for future in concurrent.futures.as_completed(future_map):
+                    idx = future_map[future]
+                    try:
+                        self._save_b64(future.result(), idx, temp_dir, results)
+                        print(f"   🐇 [Seg {idx}] Saved by Pollinations")
+                    except: pass
+        # Temp Ends
+        return results
+
+    # --- Image Worker Methods ---
+    def _submit_to_horde(self, prompt):
+        url = "https://stablehorde.net/api/v2/generate/async"
+        headers = {"apikey": self.horde_api_key, "Client-Agent": self.client_agent}
+        
+        full_prompt = prompt + " ### masterpiece, cinematic, 8k, photorealistic, sharp focus"
+        negative = "cartoon, anime, painting, illustration, ugly, deformed, blurry, text, watermark"
+        
+        payload = {
+            "prompt": full_prompt + " ### " + negative,
+            "params": {
+                "sampler_name": "k_dpmpp_2m", 
+                "steps": 30,  
+                "width": 576, "height": 1024,
+                "cfg_scale": 6
+            },
+            "models": ["Juggernaut XL", "RealVisXL V4.0", "AlbedoBase XL (SDXL)"],
+            "nsfw": False, "censor_nsfw": False, "shared": True
+        }
+        
+        resp = requests.post(url, json=payload, headers=headers)
+        if resp.status_code != 202: raise Exception(f"Horde {resp.status_code}")
+        return resp.json()['id']
+
+    def _check_horde_status(self, job_id):
+        try:
+            r = requests.get(f"https://stablehorde.net/api/v2/generate/check/{job_id}").json()
+            if r.get('faulted') or r.get('is_possible') == False: return 'FAILED', None
+            if r['done'] == 1:
+                final = requests.get(f"https://stablehorde.net/api/v2/generate/status/{job_id}").json()
+                return 'DONE', base64.b64encode(requests.get(final['generations'][0]['img']).content).decode()
+            return 'WAITING', None
+        except: return 'FAILED', None
+
+    def _gen_pollinations(self, prompt):
+        encoded = quote(prompt + " vertical cinematic 8k")
+        url = f"https://image.pollinations.ai/prompt/{encoded}?width=720&height=1280&nologo=true&seed={random.randint(1,999)}&model=flux"
+        return base64.b64encode(requests.get(url, timeout=40).content).decode()
+
+    def _gen_hf_flux(self, prompt):
         try:
             image = self.hf_client.text_to_image(
                 prompt + ", vertical 9:16 aspect ratio, high quality, 4k",
@@ -103,183 +233,174 @@ class TrulyAIReelGenerator:
             image.save(buffered, format="JPEG")
             return base64.b64encode(buffered.getvalue()).decode()
         except Exception as e:
-            print(f"   ⚠️ Flux failed ({e}), trying fallback...")
-            
-        # Strategy 2: Pollinations Fallback
-        try:
-            encoded = quote(prompt + " vertical aspect ratio 9:16")
-            url = f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=true&model=flux"
-            return base64.b64encode(requests.get(url, timeout=30).content).decode()
-        except Exception as e:
-            raise Exception("All image generators failed")
+            raise Exception(f"HF Flux Failed: {e}")
 
-    # --- 3. Voiceover (Edge TTS) ---
-    def _generate_voiceover(self, text: str, output_path: str):
-        if not text: return False
-        try:
-            asyncio.run(edge_tts.Communicate(text, VOICE_ID).save(output_path))
-            return True
-        except Exception as e: 
-            print(f"⚠️ TTS Failed: {e}")
-            return False
+    def _save_b64(self, b64_str, idx, temp_dir, results):
+        path = f"{temp_dir}/img_{idx}.jpg"
+        with open(path, "wb") as f: f.write(base64.b64decode(b64_str))
+        results[idx] = path
 
-    # --- 4. The Core Pipeline ---
+    # =========================================================================
+    # 3. VIDEO ASSEMBLY (Robust Pipeline)
+    # =========================================================================
     def generate_reel(self, niche: str, num_images: int = 5):
         base_temp = tempfile.gettempdir()
         session_id = f"reel_{int(time.time())}"
         temp_dir = f"{base_temp}/{session_id}"
         os.makedirs(temp_dir, exist_ok=True)
         
-        # 1. Get Script
+        # 1. Script
         data = self._generate_ai_script(niche, num_images)
-        print(f"📝 Title: {data['title']}")
+        print(f"📝 Title: {data.get('title', 'Untitled')}")
         
-        # 2. Build Clips
+        # 2. Images
+        image_paths = self._generate_all_images(data['segments'], temp_dir)
+        
+        # 3. Clips
         clips = []
         for i, seg in enumerate(data['segments']):
-            print(f"\n🎞️ Processing Segment {i+1}: '{seg['text_overlay']}'")
+            if not image_paths.get(i): 
+                print(f"❌ Skipping Seg {i} (Image Missing)")
+                continue 
             
-            img_path = f"{temp_dir}/img_{i}.jpg"
             voice_path = f"{temp_dir}/voice_{i}.mp3"
             clip_path = f"{temp_dir}/clip_{i}.mp4"
             
-            # Generate Image
-            img_b64 = self._generate_image(seg['visual_prompt'])
-            with open(img_path, "wb") as f: f.write(base64.b64decode(img_b64))
+            self._burn_text_into_image(image_paths[i], seg.get('text_overlay', ''))
             
-            # BURN TEXT (PIL)
-            self._burn_text_into_image(img_path, seg['text_overlay'])
-            
-            # Voice
+            # --- AUDIO GENERATION WITH SAFETY CHECK ---
             has_voice = self._generate_voiceover(seg['voiceover'], voice_path)
             
-            # Calculate Duration
-            duration = 3.0
+            # --- DURATION LOGIC ---
+            # If voice exists, match duration. If not, default to 4.0s
             if has_voice:
-                duration = self._get_audio_duration(voice_path) + 0.2
+                dur = self._get_audio_duration(voice_path) + 0.2
+            else:
+                dur = 4.0
+                voice_path = None # Critical: Don't pass bad path to ffmpeg
             
-            # Render Clip
-            self._render_clip_ffmpeg(img_path, voice_path if has_voice else None, duration, clip_path)
-            clips.append(clip_path)
+            # --- RENDER ---
+            try:
+                self._render_clip_ffmpeg(image_paths[i], voice_path, dur, clip_path)
+                clips.append(clip_path)
+            except Exception as e:
+                print(f"❌ Clip Render Failed: {e}")
             
-        # 3. Stitch & Mix
+        if not clips: raise Exception("No clips generated.")
+
+        # 4. Final Output
         final_path = f"{temp_dir}/reel.mp4"
-        music_url = random.choice(MUSIC_LIBRARY.get(data.get('mood', 'upbeat'), MUSIC_LIBRARY['upbeat']))
+        music_url = random.choice(MUSIC_LIBRARY.get(data.get('mood', 'upbeat'), list(MUSIC_LIBRARY.values())[0]))
         music_path = self._download_file(music_url, f"{temp_dir}/music.mp3")
-        
         self._stitch_videos(clips, music_path, final_path, temp_dir)
         
         with open(final_path, 'rb') as f:
-            video_b64 = base64.b64encode(f.read()).decode()
-            
-        return {
-            'video_base64': video_b64,
-            'caption': data['caption'],
-            'hashtags': data['hashtags'],
-            'title': data['title'],
-            'description': data['description'],
-            'tags': data['tags'],
-            'category_id': data['category_id'],
-            'temp_dir': temp_dir
-        }
+            return {
+                'video_base64': base64.b64encode(f.read()).decode(),
+                'caption': data.get('caption', ''),
+                'hashtags': data.get('hashtags', []),
+                'title': data.get('title', ''),
+                'temp_dir': temp_dir,
+                'description': data.get('description', ''),
+                'tags': data.get('tags', ''),
+                'category_id' : data.get('category_id', '')
+            }
 
     # --- Helpers ---
-    def _burn_text_into_image(self, img_path: str, text: str):
-        """Uses PIL to burn text permanently onto the image"""
+    def _generate_voiceover(self, text, output_path):
+        """Generates audio and validates file size to prevent ghost files"""
+        if not text: return False
+        try:
+            asyncio.run(edge_tts.Communicate(text, VOICE_ID).save(output_path))
+            # Sanity Check: If file is < 500 bytes, it's likely corrupt/empty
+            if not os.path.exists(output_path) or os.path.getsize(output_path) < 500:
+                print(f"   ⚠️ TTS Empty File Detected. Skipping audio.")
+                return False
+            return True
+        except Exception as e:
+            print(f"   ⚠️ TTS Failed: {e}")
+            return False
+
+    def _burn_text_into_image(self, img_path, text):
         if not text: return
         try:
             img = Image.open(img_path)
             draw = ImageDraw.Draw(img)
             W, H = img.size
+            font_size = int(W * 0.08)
+            try: font = ImageFont.truetype("arial.ttf", font_size)
+            except: font = ImageFont.load_default()
             
-            try:
-                # Try standard fonts
-                font = ImageFont.truetype("arial.ttf", 70)
-            except:
-                font = ImageFont.load_default()
-
-            # Text Wrapping
             lines = []
             words = text.upper().split()
-            current_line = []
-            for word in words:
-                current_line.append(word)
-                if len(' '.join(current_line)) > 15: 
-                    lines.append(' '.join(current_line[:-1]))
-                    current_line = [word]
-            lines.append(' '.join(current_line))
+            current = []
+            for w in words:
+                current.append(w)
+                if len(' '.join(current)) > 15: 
+                    lines.append(' '.join(current[:-1]))
+                    current = [w]
+            lines.append(' '.join(current))
             
-            # Draw (Bottom Center)
-            y_text = H - 450 
+            y = H - (len(lines) * font_size * 1.3) - (H * 0.15)
             for line in lines:
                 bbox = draw.textbbox((0, 0), line, font=font)
-                w = bbox[2] - bbox[0]
-                h = bbox[3] - bbox[1]
-                x_pos = (W - w) / 2
-                
-                # Outline
-                for off_x in [-3, 0, 3]:
-                    for off_y in [-3, 0, 3]:
-                        draw.text((x_pos+off_x, y_text+off_y), line, font=font, fill="black")
-                
-                # Fill
-                draw.text((x_pos, y_text), line, font=font, fill="white")
-                y_text += h + 15
-                
+                w_line = bbox[2] - bbox[0]
+                x = (W - w_line) / 2
+                for off in [-2, 0, 2]:
+                    draw.text((x+off, y-2), line, font=font, fill="black")
+                    draw.text((x+off, y+2), line, font=font, fill="black")
+                draw.text((x, y), line, font=font, fill="white")
+                y += font_size * 1.2
             img.save(img_path)
-            print(f"   ✍️ Text burned")
-        except Exception as e:
-            print(f"   ⚠️ Text Burn Failed: {e}")
+        except: pass
 
     def _render_clip_ffmpeg(self, img, audio, dur, out):
+        # FIX: Replaced 'pad=...:-1:-1' with correct centering formula
+        vf = (
+            "scale=1080:1920:force_original_aspect_ratio=decrease,"
+            "pad=1080:1920:(ow-iw)/2:(oh-ih)/2,"
+            "zoompan=z='min(zoom+0.0015,1.5)':d=700:s=1080x1920:fps=30"
+        )
+        
         cmd = ['ffmpeg', '-y', '-loop', '1', '-i', img]
         if audio: cmd.extend(['-i', audio])
         
-        # Zoom + Scale
-        vf = "scale=1080:1920,zoompan=z='min(zoom+0.0015,1.5)':d=700:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30"
+        # 'ultrafast' preset ensures we don't timeout on GitHub
+        cmd.extend(['-vf', vf, '-c:v', 'libx264', '-t', str(dur), '-pix_fmt', 'yuv420p', '-preset', 'ultrafast'])
         
-        cmd.extend(['-vf', vf, '-c:v', 'libx264', '-t', str(dur), '-pix_fmt', 'yuv420p'])
         if audio: cmd.append('-shortest')
         cmd.append(out)
         
-        subprocess.run(cmd, check=True, capture_output=True)
-
+        try:
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        except subprocess.CalledProcessError as e:
+            print(f"🔥 FFmpeg Error: {e.stderr.decode()}")
+            raise
+            
     def _stitch_videos(self, clips, music, out, temp_dir):
         list_path = f"{temp_dir}/list.txt"
         with open(list_path, 'w') as f:
             for c in clips: f.write(f"file '{c}'\n")
-            
-        vid_only = f"{temp_dir}/vid.mp4"
-        subprocess.run(['ffmpeg', '-y', '-f', 'concat', '-safe', '0', '-i', list_path, '-c', 'copy', vid_only], check=True, capture_output=True)
-        
-        # Mix Audio (Duck music volume to 10%)
-        cmd = [
-            'ffmpeg', '-y', '-i', vid_only, '-i', music,
-            '-filter_complex', '[1:a]volume=0.1[bg];[0:a][bg]amix=inputs=2:duration=first',
-            '-c:v', 'copy', '-shortest', out
-        ]
-        subprocess.run(cmd, check=True, capture_output=True)
+        vid = f"{temp_dir}/vid.mp4"
+        subprocess.run(['ffmpeg', '-y', '-f', 'concat', '-safe', '0', '-i', list_path, '-c', 'copy', vid], check=True, stdout=subprocess.DEVNULL)
+        cmd = ['ffmpeg', '-y', '-i', vid, '-i', music, '-filter_complex', '[1:a]volume=0.15[bg];[0:a][bg]amix=inputs=2:duration=first', '-c:v', 'copy', out]
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
 
     def _get_audio_duration(self, path):
-        try:
+        try: 
+            if not os.path.exists(path): return 4.0
             o = subprocess.check_output(['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', path])
             return float(o.strip())
-        except: return 3.0
+        except: return 4.0
 
     def _download_file(self, url, path):
         try:
-            with open(path, 'wb') as f:
-                f.write(requests.get(url, timeout=10).content)
-            return path
+            with open(path, 'wb') as f: f.write(requests.get(url, timeout=10).content)
         except:
-            # Silent fallback
-            subprocess.run(['ffmpeg', '-y', '-f', 'lavfi', '-i', 'anullsrc', '-t', '10', path], capture_output=True)
-            return path
+            subprocess.run(['ffmpeg', '-y', '-f', 'lavfi', '-i', 'anullsrc', '-t', '10', path], stdout=subprocess.DEVNULL)
+        return path
 
     def _parse_json(self, text):
         if '```' in text: text = text.split('```json')[1].split('```')[0] if '```json' in text else text.split('```')[1]
-        try:
-            return json.loads(text)
-        except:
-            print("⚠️ JSON Parse Failed. Returning empty.")
-            return {"segments": [], "title": "Error", "hashtags": []}
+        try: return json.loads(text)
+        except: return {"segments": [], "title": "Error"}

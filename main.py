@@ -53,7 +53,7 @@ class InstagramPublisher:
         
         # 2. Wait
         print("⏳ Processing IG Video...")
-        for _ in range(12): # Wait up to 60s
+        for _ in range(36): # Wait up to 180s
             time.sleep(5)
             s = requests.get(f"https://graph.facebook.com/v20.0/{cont_id}", params={'fields': 'status_code', 'access_token': token}).json()
             if s.get('status_code') == 'FINISHED': break
@@ -106,9 +106,10 @@ def main():
     # 1. Generate Content
     gen = TrulyAIReelGenerator(KEYS)
     niche = os.getenv('REEL_NICHE', 'Mind blowing facts')
+    num_images = int(os.getenv('REEL_IMAGES', '5'))    
     
     try:
-        result = gen.generate_reel(niche, num_images=5)
+        result = gen.generate_reel(niche, num_images)
     except Exception as e:
         print(f"❌ Generation Failed: {e}")
         return
