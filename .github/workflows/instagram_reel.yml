@@ -45,7 +45,8 @@ jobs:
         if: github.event_name == 'schedule'
         id: random-niche
         run: |
-          NICHES=("fitness and include in caption to visit link https://the-aura-app.github.io/the-aura-app/" "travel and include in caption to visit link https://the-aura-app.github.io/the-aura-app/" "food and include in caption to visit link https://the-aura-app.github.io/the-aura-app/" "motivation and include in caption to visit link https://the-aura-app.github.io/the-aura-app/" "tech and include in caption to visit link https://the-aura-app.github.io/the-aura-app/" "wellness and include in caption to visit link https://the-aura-app.github.io/the-aura-app/" "women in stress to visit link (https://the-aura-app.github.io/the-aura-app/)" "women during period and pain to visit link (https://the-aura-app.github.io/the-aura-app/)")
+          NICHES=("fitness and include in caption to visit link https://the-aura-app.github.io/the-aura-app/" "travel and include in caption to visit link https://the-aura-app.github.io/the-aura-app/" "food and include in caption to visit link https://the-aura-app.github.io/the-aura-app/" "motivation and include in caption to visit link https://the-aura-app.github.io/the-aura-app/" "tech and include in caption to visit link https://the-aura-app.github.io/the-aura-app/"
+"love and include in caption to visit link https://the-aura-app.github.io/the-aura-app/" "wellness and include in caption to visit link https://the-aura-app.github.io/the-aura-app/" "women in stress to visit link (https://the-aura-app.github.io/the-aura-app/)" "women during period and pain to visit link (https://the-aura-app.github.io/the-aura-app/)")
           SELECTED_NICHE=${NICHES[$RANDOM % ${#NICHES[@]}]}
           echo "Selected random niche: $SELECTED_NICHE"
           echo "niche=$SELECTED_NICHE" >> $GITHUB_OUTPUT
